@@ -13,13 +13,27 @@ jobs:
       - name: Checkout site
         uses: actions/checkout@v4
 
-      - name: Deploy theme and plugin with rsync
+      - name: Deploy theme
         uses: easingthemes/ssh-deploy@v5.1.0
         with:
           SSH_PRIVATE_KEY: ${{ secrets.BLUEHOST_SSH_KEY }}
           REMOTE_HOST: ${{ secrets.BLUEHOST_HOST }}
           REMOTE_USER: ${{ secrets.BLUEHOST_USER }}
           REMOTE_PORT: 22
-          SOURCE: "wp-content/"
-          TARGET: "/home/gmahakmy/public_html/wp-content/"
-          ARGS: "-avz --include='themes/' --include='themes/walabu-travel-theme/***' --include='plugins/' --include='plugins/walabu-duffel-booking/***' --exclude='*'"
+          SOURCE: "wp-content/themes/walabu-travel-theme/"
+          TARGET: "/home/gmahakmy/public_html/wp-content/themes/walabu-travel-theme/"
+          ARGS: "-avz --delete"
+
+      - name: Wait before plugin deploy
+        run: sleep 10
+
+      - name: Deploy plugin
+        uses: easingthemes/ssh-deploy@v5.1.0
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.BLUEHOST_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.BLUEHOST_HOST }}
+          REMOTE_USER: ${{ secrets.BLUEHOST_USER }}
+          REMOTE_PORT: 22
+          SOURCE: "wp-content/plugins/walabu-duffel-booking/"
+          TARGET: "/home/gmahakmy/public_html/wp-content/plugins/walabu-duffel-booking/"
+          ARGS: "-avz --delete"
