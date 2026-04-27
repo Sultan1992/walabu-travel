@@ -22,4 +22,4 @@ jobs:
           REMOTE_PORT: 22
           SOURCE: "wp-content/"
           TARGET: "/home/gmahakmy/public_html/wp-content/"
-          ARGS: "-avz --delete --include='themes/walabu-travel-theme/***' --include='plugins/walabu-duffel-booking/***' --include='themes/' --include='plugins/' --exclude='*'"
+          ARGS: "-avz --include='themes/' --include='themes/walabu-travel-theme/***' --include='plugins/' --include='plugins/walabu-duffel-booking/***' --exclude='*'"
