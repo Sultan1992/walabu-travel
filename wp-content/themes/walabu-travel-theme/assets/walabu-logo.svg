@@ -1,0 +1,43 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="walabuBlue" x1="151.197" y1="152.209" x2="1098.95" y2="641.026" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F5FAF"/>
+      <stop offset="1" stop-color="#0B235F"/>
+    </linearGradient>
+    <linearGradient id="walabuGreen" x1="678.919" y1="278.505" x2="1003.54" y2="682.128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6EBD35"/>
+      <stop offset="1" stop-color="#18803B"/>
+    </linearGradient>
+    <linearGradient id="walabuGold" x1="716.664" y1="568.605" x2="789.145" y2="610.796" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E7A500"/>
+      <stop offset="1" stop-color="#F5CD2B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" rx="36" fill="white"/>
+  <g transform="translate(210 42)">
+    <circle cx="425" cy="214" r="179" stroke="url(#walabuBlue)" stroke-width="18"/>
+    <path d="M260 462C116 431 85 278 145 178C202 83 312 18 438 18C538 18 624 54 681 118" stroke="url(#walabuBlue)" stroke-width="24" stroke-linecap="round"/>
+    <path d="M701 488C632 553 534 592 427 592C334 592 248 560 183 506" stroke="url(#walabuBlue)" stroke-width="20" stroke-linecap="round"/>
+    <path d="M495 285L585 444C598 466 625 471 643 454L758 339L781 501C785 530 819 543 842 527L925 468C981 428 1010 365 999 297L972 128L798 270L667 364L595 262C576 235 534 237 518 266L456 378L354 162C343 138 317 123 291 123H197L308 474C315 496 333 512 355 517L430 536L495 285Z" fill="url(#walabuGreen)"/>
+    <path d="M238 163H346C371 163 394 178 402 202L487 447L553 290C568 256 613 246 641 270L689 312L838 183L669 470C656 493 629 499 610 483L518 399L469 570C460 601 422 611 399 587L238 163Z" fill="url(#walabuBlue)"/>
+    <path d="M279 200C330 165 389 145 451 145C539 145 620 184 680 250" stroke="url(#walabuBlue)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M309 161C345 184 387 197 430 197C507 197 580 155 622 92" stroke="url(#walabuBlue)" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
+    <path d="M357 338C379 319 407 308 437 308C465 308 490 317 512 334" stroke="url(#walabuBlue)" stroke-width="7" stroke-linecap="round" opacity="0.88"/>
+    <path d="M830 118L947 144L1014 70C1030 53 1058 48 1080 59C1103 70 1116 95 1113 120L1094 290L1080 352L962 210L830 118Z" fill="#0B235F"/>
+    <path d="M1002 92L1093 39C1104 33 1119 43 1116 55L1087 181L1002 92Z" fill="#0B235F"/>
+    <path d="M766 278C655 376 508 451 330 499C201 534 101 545 32 540" stroke="url(#walabuBlue)" stroke-width="21" stroke-linecap="round"/>
+    <path d="M733 525C762 531 791 536 820 540" stroke="url(#walabuGold)" stroke-width="18" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(124 498)">
+    <text x="0" y="0" fill="#0B235F" font-family="Arial, Helvetica, sans-serif" font-size="86" font-weight="700" letter-spacing="3">WALABU</text>
+    <text x="586" y="0" fill="url(#walabuGreen)" font-family="Arial, Helvetica, sans-serif" font-size="86" font-weight="700" letter-spacing="3">TRAVEL</text>
+    <line x1="2" y1="56" x2="157" y2="56" stroke="#0B235F" stroke-width="5" stroke-linecap="round"/>
+    <line x1="950" y1="56" x2="1105" y2="56" stroke="#0B235F" stroke-width="5" stroke-linecap="round"/>
+    <text x="188" y="68" fill="#0B235F" font-family="Arial, Helvetica, sans-serif" font-size="33" font-weight="700" letter-spacing="4">TRAVEL</text>
+    <circle cx="434" cy="49" r="9" fill="#269445"/>
+    <text x="473" y="68" fill="#0B235F" font-family="Arial, Helvetica, sans-serif" font-size="33" font-weight="700" letter-spacing="4">EXPLORE</text>
+    <circle cx="744" cy="49" r="9" fill="#269445"/>
+    <text x="783" y="68" fill="#0B235F" font-family="Arial, Helvetica, sans-serif" font-size="33" font-weight="700" letter-spacing="4">CONNECT</text>
+    <text x="180" y="124" fill="#269445" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" letter-spacing="7">YOUR JOURNEY, OUR PASSION</text>
+  </g>
+</svg>

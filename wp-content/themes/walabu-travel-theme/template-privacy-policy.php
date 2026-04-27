@@ -1,0 +1,101 @@
+<?php
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+$privacy_file = get_template_directory() . '/assets/privacy-policy.txt';
+$privacy_content = file_exists($privacy_file) ? file_get_contents($privacy_file) : '';
+
+$privacy_lines = preg_split('/\R/', (string) $privacy_content);
+$privacy_sections = array();
+$current_section = null;
+$has_started = false;
+
+foreach ($privacy_lines as $line) {
+    $trimmed = trim($line);
+
+    if (!$has_started) {
+        if ($trimmed !== 'INTRODUCTION') {
+            continue;
+        }
+
+        $has_started = true;
+    }
+
+    if ($trimmed === '') {
+        if ($current_section !== null) {
+            $privacy_sections[$current_section]['blocks'][] = '';
+        }
+
+        continue;
+    }
+
+    if (preg_match('/^[A-Z][A-Z\s&\-\/]+$/', $trimmed)) {
+        $section_id = 'section-' . sanitize_title($trimmed);
+
+        $current_section = $section_id;
+        $privacy_sections[$section_id] = array(
+            'title'  => ucwords(strtolower($trimmed)),
+            'blocks' => array(),
+        );
+
+        continue;
+    }
+
+    if ($current_section !== null) {
+        $privacy_sections[$current_section]['blocks'][] = $trimmed;
+    }
+}
+
+get_header();
+?>
+<main class="content-shell">
+    <div class="walabu-container">
+        <article id="legal-page-top" class="content-card legal-page">
+            <p class="legal-page__eyebrow">Privacy Policy</p>
+            <h1 class="entry-title">Privacy Policy</h1>
+            <p class="legal-page__lead">
+                Review how Walabu Travel collects, uses, stores, protects, and shares personal information
+                when you browse the website, register, or book travel services.
+            </p>
+
+            <?php if (!empty($privacy_sections)) : ?>
+                <nav class="legal-page__toc" aria-label="Privacy policy contents">
+                    <h2 class="legal-page__toc-title">Contents</h2>
+                    <div class="legal-page__toc-grid">
+                        <?php foreach ($privacy_sections as $section_id => $section) : ?>
+                            <a href="#<?php echo esc_attr($section_id); ?>"><?php echo esc_html($section['title']); ?></a>
+                        <?php endforeach; ?>
+                    </div>
+                </nav>
+
+                <div class="legal-page__content legal-page__document">
+                    <?php foreach ($privacy_sections as $section_id => $section) : ?>
+                        <section id="<?php echo esc_attr($section_id); ?>" class="legal-page__section">
+                            <h2 class="legal-page__section-title"><?php echo esc_html($section['title']); ?></h2>
+
+                            <?php foreach ($section['blocks'] as $block) : ?>
+                                <?php if ($block === '') : ?>
+                                    <div class="legal-page__spacer" aria-hidden="true"></div>
+                                <?php else : ?>
+                                    <p><?php echo wp_kses_post(make_clickable(esc_html($block))); ?></p>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </section>
+                    <?php endforeach; ?>
+                </div>
+            <?php else : ?>
+                <pre class="legal-page__content legal-page__document"><?php echo esc_html($privacy_content); ?></pre>
+            <?php endif; ?>
+
+            <a class="legal-page__back-to-top" href="#legal-page-top" aria-label="Back to top">
+                <span aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M10 15V5M10 5 5.5 9.5M10 5l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </span>
+            </a>
+        </article>
+    </div>
+</main>
+<?php get_footer(); ?>
