@@ -13,13 +13,13 @@ jobs:
       - name: Checkout site
         uses: actions/checkout@v4
 
-      - name: Deploy to Bluehost
+      - name: Deploy theme and plugin to Bluehost
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.BLUEHOST_HOST }}
           username: ${{ secrets.BLUEHOST_USER }}
           key: ${{ secrets.BLUEHOST_SSH_KEY }}
           port: 22
-          source: "./*"
+          source: "wp-content/themes/walabu-travel-theme,wp-content/plugins/walabu-duffel-booking"
           target: "/home/gmahakmy/public_html"
           overwrite: true
