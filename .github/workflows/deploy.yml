@@ -13,24 +13,13 @@ jobs:
       - name: Checkout site
         uses: actions/checkout@v4
 
-      - name: Deploy theme
+      - name: Deploy theme and plugin
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.BLUEHOST_HOST }}
           username: ${{ secrets.BLUEHOST_USER }}
           key: ${{ secrets.BLUEHOST_SSH_KEY }}
           port: 22
-          source: "wp-content/themes/walabu-travel-theme"
-          target: "/home/gmahakmy/public_html/wp-content/themes"
-          overwrite: true
-
-      - name: Deploy plugin
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.BLUEHOST_HOST }}
-          username: ${{ secrets.BLUEHOST_USER }}
-          key: ${{ secrets.BLUEHOST_SSH_KEY }}
-          port: 22
-          source: "wp-content/plugins/walabu-duffel-booking"
-          target: "/home/gmahakmy/public_html/wp-content/plugins"
+          source: "wp-content/themes/walabu-travel-theme,wp-content/plugins/walabu-duffel-booking"
+          target: "/home/gmahakmy/public_html"
           overwrite: true
