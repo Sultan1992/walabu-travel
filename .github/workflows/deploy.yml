@@ -1,0 +1,25 @@
+name: Deploy Walabu Travel to Bluehost
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout site
+        uses: actions/checkout@v4
+
+      - name: Deploy to Bluehost
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.BLUEHOST_HOST }}
+          username: ${{ secrets.BLUEHOST_USER }}
+          key: ${{ secrets.BLUEHOST_SSH_KEY }}
+          port: 22
+          source: "./*"
+          target: "/home/gmahakmy/public_html"
+          overwrite: true
