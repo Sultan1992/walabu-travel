@@ -149,7 +149,11 @@ function walabu_travel_render_flight_search($variant = 'default') {
         walabu_duffel_booking_force_enqueue_assets();
     }
 
-    return do_shortcode('[walabu_flight_search variant="' . esc_attr($variant) . '"]');
+    $shortcode = 'hero' === $variant
+        ? '[walabu_flight_search variant="hero" reset_on_load="true" hide_results="true"]'
+        : '[walabu_flight_search variant="' . esc_attr($variant) . '"]';
+
+    return do_shortcode($shortcode);
 }
 
 function walabu_travel_is_terms_page() {
@@ -166,6 +170,12 @@ function walabu_travel_is_support_page() {
 
 function walabu_travel_is_my_trips_page() {
     return get_query_var('walabu_site_page') === 'my-trips';
+}
+
+function walabu_travel_is_booking_page() {
+    $booking_page_id = absint(get_option('walabu_duffel_booking_page_id', 0));
+
+    return $booking_page_id > 0 && is_page($booking_page_id);
 }
 
 function walabu_travel_is_legal_page() {
@@ -322,6 +332,10 @@ function walabu_travel_body_classes($classes) {
 
     if (walabu_travel_is_my_trips_page()) {
         $classes[] = 'walabu-my-trips-page';
+    }
+
+    if (walabu_travel_is_booking_page()) {
+        $classes[] = 'walabu-booking-page';
     }
 
     return $classes;

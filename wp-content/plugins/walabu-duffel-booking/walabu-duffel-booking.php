@@ -605,13 +605,177 @@ function walabu_duffel_booking_default_form_values() {
         'destination'    => '',
         'destination_label' => '',
         'trip_type'      => 'one_way',
+        'service_type'   => 'flight',
         'departure_date' => wp_date('Y-m-d', strtotime('+14 days')),
         'return_date'    => wp_date('Y-m-d', strtotime('+30 days')),
+        'adult_count'    => 1,
+        'child_count'    => 0,
+        'child_ages'     => array(),
+        'infant_lap_count' => 0,
+        'infant_lap_ages' => array(),
+        'infant_seat_count' => 0,
+        'infant_seat_ages' => array(),
         'passengers'     => 1,
         'cabin_class'    => 'economy',
         'max_connections' => '',
         'fare_type'      => '',
     );
+}
+
+function walabu_duffel_booking_normalize_age_list($raw_value, $max_items = 8) {
+    $ages = array();
+    $items = is_array($raw_value)
+        ? $raw_value
+        : preg_split('/\s*,\s*/', trim((string) wp_unslash($raw_value)), -1, PREG_SPLIT_NO_EMPTY);
+
+    foreach ($items as $item) {
+        if (count($ages) >= $max_items) {
+            break;
+        }
+
+        $string_value = trim((string) wp_unslash($item));
+
+        if ('' === $string_value) {
+            $ages[] = '';
+            continue;
+        }
+
+        $ages[] = absint($string_value);
+    }
+
+    return $ages;
+}
+
+function walabu_duffel_booking_serialize_age_list($ages) {
+    $normalized = array();
+
+    foreach ((array) $ages as $age) {
+        if ('' === trim((string) $age)) {
+            continue;
+        }
+
+        $normalized[] = (string) absint($age);
+    }
+
+    return implode(',', $normalized);
+}
+
+function walabu_duffel_booking_prepare_age_list($ages, $count, $default_age) {
+    $count = max(0, absint($count));
+    $prepared = array_slice(walabu_duffel_booking_normalize_age_list($ages), 0, $count);
+
+    while (count($prepared) < $count) {
+        $prepared[] = $default_age;
+    }
+
+    return $prepared;
+}
+
+function walabu_duffel_booking_total_passengers($values) {
+    return max(0, absint($values['adult_count'] ?? 0))
+        + max(0, absint($values['child_count'] ?? 0))
+        + max(0, absint($values['infant_lap_count'] ?? 0))
+        + max(0, absint($values['infant_seat_count'] ?? 0));
+}
+
+function walabu_duffel_booking_format_passenger_summary($values) {
+    $parts = array();
+    $adult_count = max(0, absint($values['adult_count'] ?? 0));
+    $child_count = max(0, absint($values['child_count'] ?? 0));
+    $infant_lap_count = max(0, absint($values['infant_lap_count'] ?? 0));
+    $infant_seat_count = max(0, absint($values['infant_seat_count'] ?? 0));
+
+    if ($adult_count > 0) {
+        $parts[] = sprintf(_n('%d Adult', '%d Adults', $adult_count, 'walabu-travel'), $adult_count);
+    }
+
+    if ($child_count > 0) {
+        $parts[] = sprintf(_n('%d Child', '%d Children', $child_count, 'walabu-travel'), $child_count);
+    }
+
+    if ($infant_lap_count > 0) {
+        $parts[] = sprintf(
+            _n('%d Infant on lap', '%d Infants on lap', $infant_lap_count, 'walabu-travel'),
+            $infant_lap_count
+        );
+    }
+
+    if ($infant_seat_count > 0) {
+        $parts[] = sprintf(
+            _n('%d Infant on seat', '%d Infants on seat', $infant_seat_count, 'walabu-travel'),
+            $infant_seat_count
+        );
+    }
+
+    return !empty($parts) ? implode(', ', $parts) : __('1 Adult', 'walabu-travel');
+}
+
+function walabu_duffel_booking_get_passenger_count_lines($values) {
+    $lines = array();
+    $adult_count = max(0, absint($values['adult_count'] ?? 0));
+    $child_count = max(0, absint($values['child_count'] ?? 0));
+    $infant_seat_count = max(0, absint($values['infant_seat_count'] ?? 0));
+    $infant_lap_count = max(0, absint($values['infant_lap_count'] ?? 0));
+
+    if ($adult_count > 0) {
+        $lines[] = sprintf(_n('%dx Adult', '%dx Adults', $adult_count, 'walabu-travel'), $adult_count);
+    }
+
+    if ($child_count > 0) {
+        $lines[] = sprintf(_n('%dx Child', '%dx Children', $child_count, 'walabu-travel'), $child_count);
+    }
+
+    if ($infant_seat_count > 0) {
+        $lines[] = sprintf(_n('%dx Infant on seat', '%dx Infants on seat', $infant_seat_count, 'walabu-travel'), $infant_seat_count);
+    }
+
+    if ($infant_lap_count > 0) {
+        $lines[] = sprintf(_n('%dx Infant on lap', '%dx Infants on lap', $infant_lap_count, 'walabu-travel'), $infant_lap_count);
+    }
+
+    return $lines;
+}
+
+function walabu_duffel_booking_build_passenger_manifest($values) {
+    $manifest = array();
+    $adult_count = max(1, absint($values['adult_count'] ?? 1));
+    $child_ages = walabu_duffel_booking_prepare_age_list($values['child_ages'] ?? array(), $values['child_count'] ?? 0, 6);
+    $infant_lap_ages = walabu_duffel_booking_prepare_age_list($values['infant_lap_ages'] ?? array(), $values['infant_lap_count'] ?? 0, 0);
+    $infant_seat_ages = walabu_duffel_booking_prepare_age_list($values['infant_seat_ages'] ?? array(), $values['infant_seat_count'] ?? 0, 0);
+
+    for ($index = 0; $index < $adult_count; $index++) {
+        $manifest[] = array(
+            'category' => 'adult',
+            'age' => null,
+            'label' => sprintf(__('Adult %d', 'walabu-travel'), $index + 1),
+        );
+    }
+
+    foreach ($child_ages as $index => $age) {
+        $manifest[] = array(
+            'category' => 'child',
+            'age' => absint($age),
+            'label' => sprintf(__('Child %1$d (Age %2$d)', 'walabu-travel'), $index + 1, absint($age)),
+        );
+    }
+
+    foreach ($infant_lap_ages as $index => $age) {
+        $manifest[] = array(
+            'category' => 'infant_lap',
+            'age' => absint($age),
+            'label' => sprintf(__('Infant on lap %1$d (Age %2$d)', 'walabu-travel'), $index + 1, absint($age)),
+        );
+    }
+
+    foreach ($infant_seat_ages as $index => $age) {
+        $manifest[] = array(
+            'category' => 'infant_seat',
+            'age' => absint($age),
+            'label' => sprintf(__('Infant on seat %1$d (Age %2$d)', 'walabu-travel'), $index + 1, absint($age)),
+        );
+    }
+
+    return $manifest;
 }
 
 function walabu_duffel_booking_sanitize_iata_code($value) {
@@ -623,6 +787,16 @@ function walabu_duffel_booking_sanitize_iata_code($value) {
 
 function walabu_duffel_booking_sanitize_fare_type($value) {
     return strtolower(preg_replace('/[^a-z0-9_]/', '', trim((string) $value)));
+}
+
+function walabu_duffel_booking_allowed_service_types() {
+    return array(
+        'flight',
+        'flight_hotel',
+        'hotel',
+        'car',
+        'cruise',
+    );
 }
 
 function walabu_duffel_booking_get_form_state() {
@@ -649,6 +823,14 @@ function walabu_duffel_booking_get_form_state() {
     $origin_label_raw = wp_unslash($request_data['origin_label'] ?? '');
     $destination_raw = wp_unslash($request_data['destination'] ?? '');
     $destination_label_raw = wp_unslash($request_data['destination_label'] ?? '');
+    $legacy_passengers = max(1, min(9, absint($request_data['passengers'] ?? 1)));
+    $adult_count = isset($request_data['adult_count']) ? absint($request_data['adult_count']) : $legacy_passengers;
+    $child_count = isset($request_data['child_count']) ? absint($request_data['child_count']) : 0;
+    $infant_lap_count = isset($request_data['infant_lap_count']) ? absint($request_data['infant_lap_count']) : 0;
+    $infant_seat_count = isset($request_data['infant_seat_count']) ? absint($request_data['infant_seat_count']) : 0;
+    $child_ages = walabu_duffel_booking_prepare_age_list($request_data['child_ages'] ?? '', $child_count, 6);
+    $infant_lap_ages = walabu_duffel_booking_prepare_age_list($request_data['infant_lap_ages'] ?? '', $infant_lap_count, 0);
+    $infant_seat_ages = walabu_duffel_booking_prepare_age_list($request_data['infant_seat_ages'] ?? '', $infant_seat_count, 0);
 
     $values = array(
         'origin'         => walabu_duffel_booking_sanitize_iata_code($origin_raw),
@@ -656,9 +838,17 @@ function walabu_duffel_booking_get_form_state() {
         'destination'    => walabu_duffel_booking_sanitize_iata_code($destination_raw),
         'destination_label' => sanitize_text_field($destination_label_raw),
         'trip_type'      => sanitize_key(wp_unslash($request_data['trip_type'] ?? $defaults['trip_type'])),
+        'service_type'   => sanitize_key(wp_unslash($request_data['service_type'] ?? $defaults['service_type'])),
         'departure_date' => sanitize_text_field(wp_unslash($request_data['departure_date'] ?? '')),
         'return_date'    => sanitize_text_field(wp_unslash($request_data['return_date'] ?? '')),
-        'passengers'     => max(1, min(9, absint($request_data['passengers'] ?? 1))),
+        'adult_count'    => max(1, $adult_count),
+        'child_count'    => max(0, $child_count),
+        'child_ages'     => $child_ages,
+        'infant_lap_count' => max(0, $infant_lap_count),
+        'infant_lap_ages' => $infant_lap_ages,
+        'infant_seat_count' => max(0, $infant_seat_count),
+        'infant_seat_ages' => $infant_seat_ages,
+        'passengers'     => 0,
         'cabin_class'    => sanitize_key(wp_unslash($request_data['cabin_class'] ?? $defaults['cabin_class'])),
         'max_connections' => '' === trim((string) ($request_data['max_connections'] ?? ''))
             ? ''
@@ -669,10 +859,48 @@ function walabu_duffel_booking_get_form_state() {
     $today = wp_date('Y-m-d');
     $allowed_cabin_classes = walabu_duffel_booking_allowed_cabin_classes();
     $allowed_trip_types = array('one_way', 'round_trip', 'multi_city');
+    $allowed_service_types = walabu_duffel_booking_allowed_service_types();
     $allowed_max_connections = walabu_duffel_booking_allowed_max_connections();
 
     if (!in_array($values['trip_type'], $allowed_trip_types, true)) {
         $values['trip_type'] = $defaults['trip_type'];
+    }
+
+    if (!in_array($values['service_type'], $allowed_service_types, true)) {
+        $values['service_type'] = $defaults['service_type'];
+    }
+
+    if ($values['infant_lap_count'] > $values['adult_count']) {
+        $values['infant_lap_count'] = $values['adult_count'];
+        $values['infant_lap_ages'] = array_slice($values['infant_lap_ages'], 0, $values['adult_count']);
+    }
+
+    $values['passengers'] = walabu_duffel_booking_total_passengers($values);
+
+    if ($values['passengers'] > 9) {
+        $errors[] = __('A maximum of 9 passengers can be searched at one time.', 'walabu-travel');
+    }
+
+    if ($values['adult_count'] < 1) {
+        $errors[] = __('At least one adult passenger is required.', 'walabu-travel');
+    }
+
+    if ($values['infant_lap_count'] > $values['adult_count']) {
+        $errors[] = __('Each infant on lap must be accompanied by a unique adult.', 'walabu-travel');
+    }
+
+    foreach ($values['child_ages'] as $age) {
+        if ($age < 2 || $age > 11) {
+            $errors[] = __('Children must be aged between 2 and 11 years.', 'walabu-travel');
+            break;
+        }
+    }
+
+    foreach (array_merge($values['infant_lap_ages'], $values['infant_seat_ages']) as $age) {
+        if ($age < 0 || $age > 1) {
+            $errors[] = __('Infants must be aged 0 or 1 years.', 'walabu-travel');
+            break;
+        }
     }
 
     if (3 !== strlen($values['origin'])) {
@@ -721,17 +949,29 @@ function walabu_duffel_booking_get_form_state() {
 function walabu_duffel_booking_build_offer_request_payload($values) {
     $passengers = array();
     $private_fares = walabu_duffel_booking_get_private_fares_config();
+    $manifest = walabu_duffel_booking_build_passenger_manifest($values);
 
-    for ($i = 0; $i < (int) $values['passengers']; $i++) {
-        if (!empty($values['fare_type'])) {
-            $passengers[] = array(
-                'fare_type' => $values['fare_type'],
-            );
+    foreach ($manifest as $passenger_meta) {
+        $category = (string) ($passenger_meta['category'] ?? '');
+
+        if ('adult' === $category) {
+            $passenger = array('type' => 'adult');
+        } elseif ('infant_lap' === $category) {
+            $passenger = array('type' => 'infant_without_seat');
+        } elseif ('infant_seat' === $category) {
+            // Duffel search does not document a separate "infant with seat" type.
+            // We map seated infants to "child" so they are priced as seated passengers
+            // instead of being interpreted as additional lap infants.
+            $passenger = array('type' => 'child');
         } else {
-            $passengers[] = array(
-                'type' => 'adult',
-            );
+            $passenger = array('age' => absint($passenger_meta['age'] ?? 0));
         }
+
+        if (!empty($values['fare_type'])) {
+            $passenger['fare_type'] = $values['fare_type'];
+        }
+
+        $passengers[] = $passenger;
     }
 
     $slices = array(
@@ -1011,22 +1251,16 @@ function walabu_duffel_booking_format_stops($segments) {
 }
 
 function walabu_duffel_booking_get_offer_airline_name($offer, $segments) {
-    $carrier_names = array();
-
     foreach ($segments as $segment) {
         if (!empty($segment['operating_carrier']['name']) && is_string($segment['operating_carrier']['name'])) {
-            $carrier_names[] = trim($segment['operating_carrier']['name']);
-        }
-
-        if (!empty($segment['marketing_carrier']['name']) && is_string($segment['marketing_carrier']['name'])) {
-            $carrier_names[] = trim($segment['marketing_carrier']['name']);
+            return trim($segment['operating_carrier']['name']);
         }
     }
 
-    $carrier_names = array_values(array_unique(array_filter($carrier_names)));
-
-    if (!empty($carrier_names)) {
-        return implode(' / ', $carrier_names);
+    foreach ($segments as $segment) {
+        if (!empty($segment['marketing_carrier']['name']) && is_string($segment['marketing_carrier']['name'])) {
+            return trim($segment['marketing_carrier']['name']);
+        }
     }
 
     if (!empty($offer['owner']['name']) && is_string($offer['owner']['name'])) {
@@ -1036,27 +1270,76 @@ function walabu_duffel_booking_get_offer_airline_name($offer, $segments) {
     return __('Unknown airline', 'walabu-travel');
 }
 
-function walabu_duffel_booking_get_offer_carrier_logo_url($segments) {
-    $logo_urls = array();
-
+function walabu_duffel_booking_get_offer_primary_carrier($segments, $fallback_offer = array()) {
     foreach ((array) $segments as $segment) {
-        foreach (array('operating_carrier', 'marketing_carrier') as $carrier_key) {
-            if (empty($segment[$carrier_key]) || !is_array($segment[$carrier_key])) {
-                continue;
-            }
-
-            foreach (array('logo_symbol_url', 'logo_lockup_url') as $logo_key) {
-                if (!empty($segment[$carrier_key][$logo_key]) && is_string($segment[$carrier_key][$logo_key])) {
-                    $logo_urls[] = trim($segment[$carrier_key][$logo_key]);
-                    break 2;
-                }
-            }
+        if (empty($segment['operating_carrier']) || !is_array($segment['operating_carrier'])) {
+            continue;
         }
+
+        $carrier = $segment['operating_carrier'];
+        $name = !empty($carrier['name']) && is_string($carrier['name']) ? trim($carrier['name']) : '';
+
+        if ('' === $name) {
+            continue;
+        }
+
+        return array(
+            'name' => $name,
+            'iata_code' => !empty($carrier['iata_code']) && is_string($carrier['iata_code']) ? strtoupper(trim($carrier['iata_code'])) : '',
+            'logo_url' => !empty($carrier['logo_symbol_url']) && is_string($carrier['logo_symbol_url'])
+                ? trim($carrier['logo_symbol_url'])
+                : (!empty($carrier['logo_lockup_url']) && is_string($carrier['logo_lockup_url']) ? trim($carrier['logo_lockup_url']) : ''),
+            'source' => 'operating_carrier',
+        );
     }
 
-    $logo_urls = array_values(array_unique(array_filter($logo_urls)));
+    foreach ((array) $segments as $segment) {
+        if (empty($segment['marketing_carrier']) || !is_array($segment['marketing_carrier'])) {
+            continue;
+        }
 
-    return !empty($logo_urls) ? $logo_urls[0] : '';
+        $carrier = $segment['marketing_carrier'];
+        $name = !empty($carrier['name']) && is_string($carrier['name']) ? trim($carrier['name']) : '';
+
+        if ('' === $name) {
+            continue;
+        }
+
+        return array(
+            'name' => $name,
+            'iata_code' => !empty($carrier['iata_code']) && is_string($carrier['iata_code']) ? strtoupper(trim($carrier['iata_code'])) : '',
+            'logo_url' => !empty($carrier['logo_symbol_url']) && is_string($carrier['logo_symbol_url'])
+                ? trim($carrier['logo_symbol_url'])
+                : (!empty($carrier['logo_lockup_url']) && is_string($carrier['logo_lockup_url']) ? trim($carrier['logo_lockup_url']) : ''),
+            'source' => 'marketing_carrier',
+        );
+    }
+
+    $owner_name = !empty($fallback_offer['owner']['name']) && is_string($fallback_offer['owner']['name']) ? trim($fallback_offer['owner']['name']) : '';
+
+    if ('' !== $owner_name) {
+        return array(
+            'name' => $owner_name,
+            'iata_code' => !empty($fallback_offer['owner']['iata_code']) && is_string($fallback_offer['owner']['iata_code']) ? strtoupper(trim($fallback_offer['owner']['iata_code'])) : '',
+            'logo_url' => !empty($fallback_offer['owner']['logo_symbol_url']) && is_string($fallback_offer['owner']['logo_symbol_url'])
+                ? trim($fallback_offer['owner']['logo_symbol_url'])
+                : (!empty($fallback_offer['owner']['logo_lockup_url']) && is_string($fallback_offer['owner']['logo_lockup_url']) ? trim($fallback_offer['owner']['logo_lockup_url']) : ''),
+            'source' => 'owner',
+        );
+    }
+
+    return array(
+        'name' => __('Unknown airline', 'walabu-travel'),
+        'iata_code' => '',
+        'logo_url' => '',
+        'source' => '',
+    );
+}
+
+function walabu_duffel_booking_get_offer_carrier_logo_url($segments) {
+    $carrier = walabu_duffel_booking_get_offer_primary_carrier($segments);
+
+    return !empty($carrier['logo_url']) ? $carrier['logo_url'] : '';
 }
 
 function walabu_duffel_booking_format_condition_summary($condition, $kind = 'change') {
@@ -1349,6 +1632,7 @@ function walabu_duffel_booking_get_slice_summary($slice) {
     foreach ($segments as $segment) {
         if (!empty($segment['operating_carrier']['name']) && is_string($segment['operating_carrier']['name'])) {
             $carrier_names[] = trim($segment['operating_carrier']['name']);
+            continue;
         }
 
         if (!empty($segment['marketing_carrier']['name']) && is_string($segment['marketing_carrier']['name'])) {
@@ -1417,8 +1701,172 @@ function walabu_duffel_booking_get_slice_summary($slice) {
     );
 }
 
-function walabu_duffel_booking_map_offers($offers) {
+function walabu_duffel_booking_build_itinerary_key($slices) {
+    $parts = array();
+
+    foreach ((array) $slices as $slice) {
+        foreach ((array) ($slice['segments'] ?? array()) as $segment) {
+            $parts[] = implode('|', array(
+                (string) ($segment['origin']['iata_code'] ?? ''),
+                (string) ($segment['destination']['iata_code'] ?? ''),
+                (string) ($segment['departing_at'] ?? ''),
+                (string) ($segment['arriving_at'] ?? ''),
+                (string) ($segment['marketing_carrier']['iata_code'] ?? ''),
+                (string) ($segment['marketing_carrier_flight_number'] ?? ''),
+            ));
+        }
+    }
+
+    return md5(implode('~', $parts));
+}
+
+function walabu_duffel_booking_get_offer_brand_name($slices, $segments, $fallback_cabin_class = 'economy') {
+    $brands = array();
+
+    foreach ((array) $slices as $slice) {
+        if (!empty($slice['fare_brand_name']) && is_string($slice['fare_brand_name'])) {
+            $brands[] = trim($slice['fare_brand_name']);
+        }
+    }
+
+    if (empty($brands)) {
+        foreach ((array) $segments as $segment) {
+            $segment_passenger = $segment['passengers'][0] ?? array();
+
+            if (!empty($segment_passenger['cabin_class_marketing_name']) && is_string($segment_passenger['cabin_class_marketing_name'])) {
+                $brands[] = trim($segment_passenger['cabin_class_marketing_name']);
+            }
+        }
+    }
+
+    $brands = array_values(array_unique(array_filter($brands)));
+
+    if (!empty($brands)) {
+        return implode(' / ', $brands);
+    }
+
+    return ucwords(str_replace('_', ' ', (string) $fallback_cabin_class));
+}
+
+function walabu_duffel_booking_get_offer_baggage_highlights($segments) {
+    $has_personal_item = false;
+    $has_carry_on = false;
+    $checked_bag_quantity = 0;
+
+    foreach ((array) $segments as $segment) {
+        foreach ((array) ($segment['passengers'] ?? array()) as $passenger) {
+            foreach ((array) ($passenger['baggages'] ?? array()) as $baggage) {
+                $type = (string) ($baggage['type'] ?? '');
+                $quantity = max(1, absint($baggage['quantity'] ?? 1));
+
+                if ('personal_item' === $type) {
+                    $has_personal_item = true;
+                } elseif ('carry_on' === $type) {
+                    $has_carry_on = true;
+                } elseif ('checked' === $type) {
+                    $checked_bag_quantity = max($checked_bag_quantity, $quantity);
+                }
+            }
+        }
+    }
+
+    $highlights = array();
+
+    if ($has_personal_item) {
+        $highlights[] = __('Personal item included', 'walabu-travel');
+    }
+
+    if ($has_carry_on) {
+        $highlights[] = __('Carry-on bag included', 'walabu-travel');
+    }
+
+    if ($checked_bag_quantity > 0) {
+        $highlights[] = sprintf(
+            _n('%d checked bag included', '%d checked bags included', $checked_bag_quantity, 'walabu-travel'),
+            $checked_bag_quantity
+        );
+    }
+
+    if (empty($highlights)) {
+        $highlights[] = __('Bag details available after selection', 'walabu-travel');
+    }
+
+    return array_slice($highlights, 0, 3);
+}
+
+function walabu_duffel_booking_get_offer_available_service_baggage_summary($offer) {
+    $available_services = is_array($offer['available_services'] ?? null) ? $offer['available_services'] : array();
+    $bag_prices = array();
+
+    foreach ($available_services as $service) {
+        if ('baggage' !== (string) ($service['type'] ?? '')) {
+            continue;
+        }
+
+        $amount = isset($service['total_amount']) ? (float) $service['total_amount'] : null;
+        $currency = trim((string) ($service['total_currency'] ?? ''));
+        $quantity = max(1, absint($service['maximum_quantity'] ?? 1));
+
+        if (null === $amount || '' === $currency) {
+            continue;
+        }
+
+        $bag_prices[] = array(
+            'label' => 1 === $quantity
+                ? __('1 checked bag', 'walabu-travel')
+                : sprintf(__('%d checked bags', 'walabu-travel'), $quantity),
+            'price' => walabu_duffel_booking_format_money($currency, $amount),
+        );
+    }
+
+    if (!empty($bag_prices)) {
+        $labels = array();
+
+        foreach ($bag_prices as $bag_price) {
+            $labels[] = sprintf('%s %s', $bag_price['label'], $bag_price['price']);
+        }
+
+        return implode(' • ', $labels);
+    }
+
+    return '';
+}
+
+function walabu_duffel_booking_get_offer_flexibility_highlights($offer, $slice_change_note) {
+    $highlights = array();
+    $change_condition = is_array($offer['conditions']['change_before_departure'] ?? null)
+        ? $offer['conditions']['change_before_departure']
+        : null;
+    $refund_condition = is_array($offer['conditions']['refund_before_departure'] ?? null)
+        ? $offer['conditions']['refund_before_departure']
+        : null;
+
+    if (is_array($refund_condition) && true === ($refund_condition['allowed'] ?? null)) {
+        $highlights[] = (float) ($refund_condition['penalty_amount'] ?? 0) <= 0
+            ? __('Free cancellation', 'walabu-travel')
+            : __('Refundable for a fee', 'walabu-travel');
+    } else {
+        $highlights[] = __('Refund not allowed', 'walabu-travel');
+    }
+
+    if (is_array($change_condition) && true === ($change_condition['allowed'] ?? null)) {
+        $highlights[] = (float) ($change_condition['penalty_amount'] ?? 0) <= 0
+            ? __('No change fees', 'walabu-travel')
+            : __('Changeable for a fee', 'walabu-travel');
+    } else {
+        $highlights[] = __('Changes not allowed', 'walabu-travel');
+    }
+
+    if ('' !== trim((string) $slice_change_note)) {
+        $highlights[] = $slice_change_note;
+    }
+
+    return array_slice(array_values(array_unique(array_filter($highlights))), 0, 3);
+}
+
+function walabu_duffel_booking_map_offers($offers, $search_values = array()) {
     $mapped_offers = array();
+    $requested_passenger_count = walabu_duffel_booking_total_passengers($search_values);
 
     foreach ((array) $offers as $offer) {
         $slices = is_array($offer['slices'] ?? null) ? $offer['slices'] : array();
@@ -1429,7 +1877,9 @@ function walabu_duffel_booking_map_offers($offers) {
         $slice_change_note = walabu_duffel_booking_get_slice_change_summary($slices);
         $amount = isset($offer['total_amount']) ? (float) $offer['total_amount'] : 0.0;
         $currency = trim((string) ($offer['total_currency'] ?? ''));
-        $passenger_count = !empty($offer['passengers']) && is_array($offer['passengers']) ? count($offer['passengers']) : 1;
+        $passenger_count = $requested_passenger_count > 0
+            ? $requested_passenger_count
+            : (!empty($offer['passengers']) && is_array($offer['passengers']) ? count($offer['passengers']) : 1);
         $slice_summaries = array();
         $airline_names = array();
         $stop_count_max = 0;
@@ -1460,6 +1910,11 @@ function walabu_duffel_booking_map_offers($offers) {
         }
 
         $stop_bucket = '2_plus';
+        $itinerary_key = walabu_duffel_booking_build_itinerary_key($slices);
+        $fare_brand_name = walabu_duffel_booking_get_offer_brand_name($slices, $primary_segments, $search_values['cabin_class'] ?? 'economy');
+        $baggage_highlights = walabu_duffel_booking_get_offer_baggage_highlights($primary_segments);
+        $flexibility_highlights = walabu_duffel_booking_get_offer_flexibility_highlights($offer, $slice_change_note);
+        $primary_carrier = walabu_duffel_booking_get_offer_primary_carrier($primary_segments, $offer);
 
         if (0 === $stop_count_max) {
             $stop_bucket = 'nonstop';
@@ -1469,12 +1924,24 @@ function walabu_duffel_booking_map_offers($offers) {
 
         $mapped_offers[] = array(
             'offer_id'       => (string) ($offer['id'] ?? ''),
-            'airline_name'   => walabu_duffel_booking_get_offer_airline_name($offer, $primary_segments),
-            'airline_display_name' => !empty($airline_names) ? implode(' / ', $airline_names) : walabu_duffel_booking_get_offer_airline_name($offer, $primary_segments),
-            'airline_logo_url' => !empty($slice_summaries[0]['carrier_logo_url']) ? $slice_summaries[0]['carrier_logo_url'] : walabu_duffel_booking_get_offer_carrier_logo_url($primary_segments),
+            'airline_name'   => $primary_carrier['name'],
+            'airline_display_name' => $primary_carrier['name'],
+            'airline_logo_url' => !empty($primary_carrier['logo_url']) ? $primary_carrier['logo_url'] : (!empty($slice_summaries[0]['carrier_logo_url']) ? $slice_summaries[0]['carrier_logo_url'] : ''),
+            'airline_iata_code' => $primary_carrier['iata_code'],
+            'airline_source' => $primary_carrier['source'],
+            'itinerary_key'  => $itinerary_key,
+            'fare_brand_name' => $fare_brand_name,
             'price'          => walabu_duffel_booking_format_money($currency, $amount),
             'price_amount'   => $amount,
             'price_currency' => $currency,
+            'base_amount'    => isset($offer['base_amount']) ? (float) $offer['base_amount'] : null,
+            'base_currency'  => trim((string) ($offer['base_currency'] ?? $currency)),
+            'tax_amount'     => isset($offer['tax_amount']) ? (float) $offer['tax_amount'] : null,
+            'tax_currency'   => trim((string) ($offer['tax_currency'] ?? $currency)),
+            'expires_at'     => !empty($offer['expires_at'])
+                ? (string) $offer['expires_at']
+                : (string) ($offer['payment_requirements']['price_guarantee_expires_at'] ?? ''),
+            'passenger_count' => $passenger_count,
             'price_per_passenger' => $passenger_count > 0 ? ($amount / $passenger_count) : $amount,
             'departure_time' => walabu_duffel_booking_format_datetime($primary_first_segment['departing_at'] ?? ''),
             'arrival_time'   => walabu_duffel_booking_format_datetime($primary_last_segment['arriving_at'] ?? ''),
@@ -1488,6 +1955,8 @@ function walabu_duffel_booking_map_offers($offers) {
             'slice_change_note' => $slice_change_note,
             'airline_names'  => $airline_names,
             'airline_filters' => $airline_filters,
+            'baggage_highlights' => $baggage_highlights,
+            'flexibility_highlights' => $flexibility_highlights,
             'slices'         => $slice_summaries,
             'total_duration_minutes' => $total_duration_minutes,
             'flexibility_score' => walabu_duffel_booking_get_offer_flexibility_score($offer, $slice_change_note),
@@ -1516,6 +1985,12 @@ function walabu_duffel_booking_get_results_view_state() {
         'filter_airlines' => $filter_airlines,
         'sort_by'         => $sort_by,
     );
+}
+
+function walabu_duffel_booking_get_results_page() {
+    $page = absint(wp_unslash($_GET['page'] ?? 1));
+
+    return max(1, $page);
 }
 
 function walabu_duffel_booking_get_selected_offer_id() {
@@ -1568,12 +2043,59 @@ function walabu_duffel_booking_get_offer_cache_key($search_values, $offer_id) {
         'departure_date' => $search_values['departure_date'] ?? '',
         'return_date' => $search_values['return_date'] ?? '',
         'trip_type' => $search_values['trip_type'] ?? '',
-        'passengers' => $search_values['passengers'] ?? 1,
+        'service_type' => $search_values['service_type'] ?? 'flight',
+        'adult_count' => $search_values['adult_count'] ?? 1,
+        'child_count' => $search_values['child_count'] ?? 0,
+        'child_ages' => walabu_duffel_booking_serialize_age_list($search_values['child_ages'] ?? array()),
+        'infant_lap_count' => $search_values['infant_lap_count'] ?? 0,
+        'infant_lap_ages' => walabu_duffel_booking_serialize_age_list($search_values['infant_lap_ages'] ?? array()),
+        'infant_seat_count' => $search_values['infant_seat_count'] ?? 0,
+        'infant_seat_ages' => walabu_duffel_booking_serialize_age_list($search_values['infant_seat_ages'] ?? array()),
         'cabin_class' => $search_values['cabin_class'] ?? 'economy',
         'max_connections' => $search_values['max_connections'] ?? '',
     ));
 
     return 'walabu_duffel_offer_' . md5($search_signature . '|' . (string) $offer_id);
+}
+
+function walabu_duffel_booking_offer_matches_selected_state($offer, $selected_offer) {
+    if (!is_array($offer) || !is_array($selected_offer)) {
+        return false;
+    }
+
+    $offer_id = (string) ($offer['offer_id'] ?? '');
+    $selected_offer_id = (string) ($selected_offer['offer_id'] ?? '');
+
+    if ('' !== $offer_id && '' !== $selected_offer_id && $offer_id === $selected_offer_id) {
+        return true;
+    }
+
+    $offer_itinerary_key = (string) ($offer['itinerary_key'] ?? '');
+    $selected_itinerary_key = (string) ($selected_offer['itinerary_key'] ?? '');
+    $offer_price_amount = (string) ($offer['price_amount'] ?? '');
+    $selected_price_amount = (string) ($selected_offer['price_amount'] ?? '');
+    $offer_price_currency = strtoupper(trim((string) ($offer['price_currency'] ?? '')));
+    $selected_price_currency = strtoupper(trim((string) ($selected_offer['price_currency'] ?? '')));
+    $offer_fare_brand = strtolower(trim((string) ($offer['fare_brand_name'] ?? '')));
+    $selected_fare_brand = strtolower(trim((string) ($selected_offer['fare_brand_name'] ?? '')));
+
+    if ('' === $offer_itinerary_key || '' === $selected_itinerary_key || $offer_itinerary_key !== $selected_itinerary_key) {
+        return false;
+    }
+
+    if ('' === $offer_price_amount || '' === $selected_price_amount || $offer_price_amount !== $selected_price_amount) {
+        return false;
+    }
+
+    if ('' !== $offer_price_currency && '' !== $selected_price_currency && $offer_price_currency !== $selected_price_currency) {
+        return false;
+    }
+
+    if ('' !== $offer_fare_brand && '' !== $selected_fare_brand && $offer_fare_brand !== $selected_fare_brand) {
+        return false;
+    }
+
+    return true;
 }
 
 function walabu_duffel_booking_cache_offer_snapshot($search_values, $offer) {
@@ -1590,8 +2112,11 @@ function walabu_duffel_booking_cache_offer_snapshot($search_values, $offer) {
 function walabu_duffel_booking_get_cached_offer_snapshot($search_values, $offer_id, $token = '') {
     $offer_id = (string) $offer_id;
     $token = trim((string) $token);
+    $expected_cache_key = '' !== $offer_id
+        ? walabu_duffel_booking_get_offer_cache_key($search_values, $offer_id)
+        : '';
 
-    if ('' !== $token) {
+    if ('' !== $token && '' !== $expected_cache_key && hash_equals($expected_cache_key, $token)) {
         $cached_offer = get_transient($token);
 
         if (is_array($cached_offer) && !empty($cached_offer['offer_id']) && $cached_offer['offer_id'] === $offer_id) {
@@ -1603,13 +2128,58 @@ function walabu_duffel_booking_get_cached_offer_snapshot($search_values, $offer_
         return null;
     }
 
-    $cached_offer = get_transient(walabu_duffel_booking_get_offer_cache_key($search_values, $offer_id));
+    $cached_offer = get_transient($expected_cache_key);
 
     if (is_array($cached_offer) && !empty($cached_offer['offer_id']) && $cached_offer['offer_id'] === $offer_id) {
         return $cached_offer;
     }
 
     return null;
+}
+
+function walabu_duffel_booking_get_live_offer_snapshot($offer_id, $access_token) {
+    $offer_id = trim((string) $offer_id);
+    $access_token = trim((string) $access_token);
+
+    if ('' === $offer_id || '' === $access_token) {
+        return null;
+    }
+
+    $response = wp_remote_get(
+        add_query_arg(
+            array(
+                'return_available_services' => 'true',
+            ),
+            'https://api.duffel.com/air/offers/' . rawurlencode($offer_id)
+        ),
+        array(
+            'timeout' => 70,
+            'headers' => array(
+                'Authorization'  => 'Bearer ' . $access_token,
+                'Duffel-Version' => WALABU_DUFFEL_BOOKING_API_VERSION,
+                'Accept'         => 'application/json',
+            ),
+        )
+    );
+
+    if (is_wp_error($response)) {
+        return null;
+    }
+
+    $status_code = (int) wp_remote_retrieve_response_code($response);
+
+    if ($status_code < 200 || $status_code >= 300) {
+        return null;
+    }
+
+    $body = json_decode(wp_remote_retrieve_body($response), true);
+    $offer = $body['data'] ?? array();
+
+    if (!is_array($offer) || empty($offer['id'])) {
+        return null;
+    }
+
+    return $offer;
 }
 
 function walabu_duffel_booking_offer_matches_results_filters($offer, $view_state) {
@@ -1642,50 +2212,6 @@ function walabu_duffel_booking_sort_offers_for_results($offers, $sort_by) {
     }
 
     if ('best' === $sort_by) {
-        $prices = array_map(static function ($offer) {
-            return (float) ($offer['price_amount'] ?? 0);
-        }, $offers);
-        $durations = array_map(static function ($offer) {
-            return (int) ($offer['total_duration_minutes'] ?? 0);
-        }, $offers);
-        $flex_scores = array_map(static function ($offer) {
-            return (int) ($offer['flexibility_score'] ?? 0);
-        }, $offers);
-        $min_price = min($prices);
-        $max_price = max($prices);
-        $min_duration = min($durations);
-        $max_duration = max($durations);
-        $min_flex = min($flex_scores);
-        $max_flex = max($flex_scores);
-
-        usort(
-            $offers,
-            static function ($left, $right) use ($min_price, $max_price, $min_duration, $max_duration, $min_flex, $max_flex) {
-                $left_price = (float) ($left['price_amount'] ?? 0);
-                $right_price = (float) ($right['price_amount'] ?? 0);
-                $left_duration = (int) ($left['total_duration_minutes'] ?? 0);
-                $right_duration = (int) ($right['total_duration_minutes'] ?? 0);
-                $left_flex = (int) ($left['flexibility_score'] ?? 0);
-                $right_flex = (int) ($right['flexibility_score'] ?? 0);
-
-                $left_price_score = $max_price > $min_price ? (($left_price - $min_price) / ($max_price - $min_price)) : 0;
-                $right_price_score = $max_price > $min_price ? (($right_price - $min_price) / ($max_price - $min_price)) : 0;
-                $left_duration_score = $max_duration > $min_duration ? (($left_duration - $min_duration) / ($max_duration - $min_duration)) : 0;
-                $right_duration_score = $max_duration > $min_duration ? (($right_duration - $min_duration) / ($max_duration - $min_duration)) : 0;
-                $left_flex_score = $max_flex > $min_flex ? (($left_flex - $min_flex) / ($max_flex - $min_flex)) : 0;
-                $right_flex_score = $max_flex > $min_flex ? (($right_flex - $min_flex) / ($max_flex - $min_flex)) : 0;
-
-                $left_score = (0.55 * $left_price_score) + (0.30 * $left_duration_score) + (0.15 * (1 - $left_flex_score));
-                $right_score = (0.55 * $right_price_score) + (0.30 * $right_duration_score) + (0.15 * (1 - $right_flex_score));
-
-                if ($left_score === $right_score) {
-                    return $left_price <=> $right_price;
-                }
-
-                return $left_score <=> $right_score;
-            }
-        );
-
         return $offers;
     }
 
@@ -1722,9 +2248,17 @@ function walabu_duffel_booking_get_search_query_args($search_values) {
         'destination' => $search_values['destination'] ?? '',
         'destination_label' => $search_values['destination_label'] ?? '',
         'trip_type' => $search_values['trip_type'] ?? 'one_way',
+        'service_type' => $search_values['service_type'] ?? 'flight',
         'departure_date' => $search_values['departure_date'] ?? '',
         'return_date' => $search_values['return_date'] ?? '',
-        'passengers' => $search_values['passengers'] ?? 1,
+        'adult_count' => $search_values['adult_count'] ?? 1,
+        'child_count' => $search_values['child_count'] ?? 0,
+        'child_ages' => walabu_duffel_booking_serialize_age_list($search_values['child_ages'] ?? array()),
+        'infant_lap_count' => $search_values['infant_lap_count'] ?? 0,
+        'infant_lap_ages' => walabu_duffel_booking_serialize_age_list($search_values['infant_lap_ages'] ?? array()),
+        'infant_seat_count' => $search_values['infant_seat_count'] ?? 0,
+        'infant_seat_ages' => walabu_duffel_booking_serialize_age_list($search_values['infant_seat_ages'] ?? array()),
+        'passengers' => $search_values['passengers'] ?? walabu_duffel_booking_total_passengers($search_values),
         'cabin_class' => $search_values['cabin_class'] ?? 'economy',
     );
 
@@ -1822,6 +2356,7 @@ function walabu_duffel_booking_build_results_url($search_values, $view_state, $o
 function walabu_duffel_booking_build_results_context($offers) {
     $view_state = walabu_duffel_booking_get_results_view_state();
     $selected_offer_id = walabu_duffel_booking_get_selected_offer_id();
+    $results_page = walabu_duffel_booking_get_results_page();
     $stop_options = array(
         'nonstop' => array(
             'label' => __('Nonstop', 'walabu-travel'),
@@ -1869,10 +2404,14 @@ function walabu_duffel_booking_build_results_context($offers) {
                     'count' => 0,
                     'min_price' => null,
                     'currency' => '',
+                    'logo_url' => '',
                 );
             }
 
             $airline_options[$key]['count']++;
+            if (empty($airline_options[$key]['logo_url']) && !empty($offer['airline_logo_url'])) {
+                $airline_options[$key]['logo_url'] = (string) $offer['airline_logo_url'];
+            }
 
             if (null === $airline_options[$key]['min_price'] || $offer['price_amount'] < $airline_options[$key]['min_price']) {
                 $airline_options[$key]['min_price'] = (float) $offer['price_amount'];
@@ -1901,16 +2440,54 @@ function walabu_duffel_booking_build_results_context($offers) {
     $cheapest_offers = walabu_duffel_booking_sort_offers_for_results($filtered_offers, 'cheapest');
     $shortest_offers = walabu_duffel_booking_sort_offers_for_results($filtered_offers, 'shortest');
     $flexible_offers = walabu_duffel_booking_sort_offers_for_results($filtered_offers, 'flexible');
+    $total_offers = count($sorted_offers);
+    $page_size = max(1, (int) WALABU_DUFFEL_BOOKING_RESULTS_LIMIT);
+    $total_pages = max(1, (int) ceil($total_offers / $page_size));
+    $results_page = min($results_page, $total_pages);
+    $page_offset = ($results_page - 1) * $page_size;
+    $paged_offers = array_slice($sorted_offers, $page_offset, $page_size);
+    $pagination_items = array();
+    $window = 2;
+    $start_page = max(1, $results_page - $window);
+    $end_page = min($total_pages, $results_page + $window);
+
+    if ($start_page > 1) {
+        $pagination_items[] = array('type' => 'page', 'page' => 1);
+
+        if ($start_page > 2) {
+            $pagination_items[] = array('type' => 'ellipsis');
+        }
+    }
+
+    for ($page_index = $start_page; $page_index <= $end_page; $page_index++) {
+        $pagination_items[] = array('type' => 'page', 'page' => $page_index);
+    }
+
+    if ($end_page < $total_pages) {
+        if ($end_page < $total_pages - 1) {
+            $pagination_items[] = array('type' => 'ellipsis');
+        }
+
+        $pagination_items[] = array('type' => 'page', 'page' => $total_pages);
+    }
 
     return array(
         'view_state' => $view_state,
         'selected_offer_id' => $selected_offer_id,
+        'results_page' => $results_page,
+        'results_page_size' => $page_size,
+        'results_total_pages' => $total_pages,
+        'results_total_offers' => $total_offers,
+        'results_page_start' => $total_offers > 0 ? $page_offset + 1 : 0,
+        'results_page_end' => min($page_offset + $page_size, $total_offers),
+        'results_pagination_items' => $pagination_items,
         'stop_options' => $stop_options,
         'airline_options' => $airline_options,
-        'offers' => $sorted_offers,
+        'offers' => $paged_offers,
+        'all_offers' => $sorted_offers,
         'raw_count' => count($offers),
         'filtered_count' => count($filtered_offers),
-        'displayed_count' => count($sorted_offers),
+        'displayed_count' => count($paged_offers),
         'tabs' => array(
             'best' => array(
                 'label' => __('Best', 'walabu-travel'),
@@ -2115,15 +2692,15 @@ function walabu_duffel_booking_search_offers($values) {
         $unique_offers[$offer_id] = $offer;
     }
 
-        return array(
-            'success' => true,
-            'message' => sprintf(
-                __('Showing %1$d of %2$d available offers returned by Duffel.', 'walabu-travel'),
-                count($unique_offers),
-                count($unique_offers)
-            ),
-            'offers'  => walabu_duffel_booking_map_offers(array_values($unique_offers)),
-        );
+    return array(
+        'success' => true,
+        'message' => sprintf(
+            __('Showing %1$d of %2$d available offers returned by Duffel.', 'walabu-travel'),
+            count($unique_offers),
+            count($unique_offers)
+        ),
+        'offers'  => walabu_duffel_booking_map_offers(array_values($unique_offers), $values),
+    );
 }
 
 function walabu_duffel_booking_fetch_place_suggestions($query) {
@@ -2173,12 +2750,33 @@ function walabu_duffel_booking_fetch_place_suggestions($query) {
     }
 
     $suggestions = array();
+    $suggestion_index = array();
+
+    $add_suggestion = static function (array $suggestion) use (&$suggestions, &$suggestion_index) {
+        $type = trim((string) ($suggestion['type'] ?? ''));
+        $value = trim((string) ($suggestion['value'] ?? ''));
+        $label = trim((string) ($suggestion['label'] ?? ''));
+
+        if ('' === $type || '' === $value || '' === $label) {
+            return;
+        }
+
+        $key = $type . '|' . $value . '|' . $label;
+
+        if (isset($suggestion_index[$key])) {
+            return;
+        }
+
+        $suggestion_index[$key] = true;
+        $suggestions[] = $suggestion;
+    };
 
     foreach ((array) ($body['data'] ?? array()) as $place) {
         $name = trim((string) ($place['name'] ?? ''));
         $iata_code = trim((string) ($place['iata_code'] ?? ''));
         $type = trim((string) ($place['type'] ?? ''));
         $city_name = trim((string) ($place['city_name'] ?? ''));
+        $country_name = trim((string) ($place['country_name'] ?? ''));
         if ('' === $iata_code || '' === $name) {
             continue;
         }
@@ -2186,9 +2784,9 @@ function walabu_duffel_booking_fetch_place_suggestions($query) {
         if ('city' === $type) {
             $primary_label = sprintf('%s (%s)', $name, $iata_code);
         } elseif ('' !== $city_name && $city_name !== $name) {
-            $primary_label = sprintf('%s / %s (%s)', $city_name, $name, $iata_code);
+            $primary_label = sprintf('%s - %s', $iata_code, $name);
         } else {
-            $primary_label = sprintf('%s (%s)', $name, $iata_code);
+            $primary_label = sprintf('%s - %s', $iata_code, $name);
         }
 
         $secondary_parts = array();
@@ -2201,7 +2799,19 @@ function walabu_duffel_booking_fetch_place_suggestions($query) {
                     !empty($airport['iata_code']) && is_string($airport['iata_code']) &&
                     !empty($airport['name']) && is_string($airport['name'])
                 ) {
-                    $airport_summaries[] = sprintf('%s (%s)', $airport['name'], $airport['iata_code']);
+                    $airport_city = trim((string) ($airport['city_name'] ?? $city_name));
+                    $airport_country = trim((string) ($airport['country_name'] ?? $country_name));
+                    $airport_detail = $airport['name'];
+
+                    if ('' !== $airport_city) {
+                        $airport_detail .= ', ' . $airport_city;
+                    }
+
+                    if ('' !== $airport_country) {
+                        $airport_detail .= ', ' . $airport_country;
+                    }
+
+                    $airport_summaries[] = sprintf('%s - %s', $airport['iata_code'], $airport_detail);
                 }
             }
 
@@ -2209,24 +2819,204 @@ function walabu_duffel_booking_fetch_place_suggestions($query) {
                 $secondary_parts[] = sprintf(__('Airports: %s', 'walabu-travel'), implode(', ', $airport_summaries));
             }
         } elseif ('airport' === $type) {
-            $secondary_parts[] = $name;
+            $airport_detail = $name;
+
+            if ('' !== $city_name) {
+                $airport_detail .= ', ' . $city_name;
+            }
+
+            if ('' !== $country_name) {
+                $airport_detail .= ', ' . $country_name;
+            }
+
+            $secondary_parts[] = $airport_detail;
         }
 
-        $suggestions[] = array(
-            'value'      => $iata_code,
-            'label'      => $primary_label,
-            'secondary'  => implode(' • ', array_filter($secondary_parts)),
-            'type'       => $type,
-            'place_name'  => $name,
-            'city_name'   => $city_name,
-            'latitude'    => isset($place['latitude']) ? (float) $place['latitude'] : null,
-            'longitude'   => isset($place['longitude']) ? (float) $place['longitude'] : null,
+        $add_suggestion(
+            array(
+                'value'      => $iata_code,
+                'label'      => $primary_label,
+                'secondary'  => implode(' • ', array_filter($secondary_parts)),
+                'type'       => $type,
+                'place_name' => $name,
+                'city_name'  => $city_name,
+                'country_name' => $country_name,
+                'latitude'   => isset($place['latitude']) ? (float) $place['latitude'] : null,
+                'longitude'  => isset($place['longitude']) ? (float) $place['longitude'] : null,
+            )
         );
+
+        if ('city' === $type && !empty($place['airports']) && is_array($place['airports'])) {
+            foreach ($place['airports'] as $airport) {
+                $airport_name = trim((string) ($airport['name'] ?? ''));
+                $airport_code = trim((string) ($airport['iata_code'] ?? ''));
+                $airport_country = trim((string) ($airport['country_name'] ?? $country_name));
+
+                if ('' === $airport_name || '' === $airport_code) {
+                    continue;
+                }
+
+                $airport_city_name = trim((string) ($airport['city_name'] ?? $city_name));
+                $airport_detail = $airport_name;
+
+                if ('' !== $airport_city_name) {
+                    $airport_detail .= ', ' . $airport_city_name;
+                }
+
+                if ('' !== $airport_country) {
+                    $airport_detail .= ', ' . $airport_country;
+                }
+
+                $add_suggestion(
+                    array(
+                        'value'     => $airport_code,
+                        'label'     => sprintf('%s - %s', $airport_code, $airport_detail),
+                        'secondary' => $airport_detail,
+                        'type'      => 'airport',
+                        'place_name' => $airport_name,
+                        'city_name'  => $airport_city_name,
+                        'country_name' => $airport_country,
+                        'latitude'   => isset($airport['latitude']) ? (float) $airport['latitude'] : null,
+                        'longitude'  => isset($airport['longitude']) ? (float) $airport['longitude'] : null,
+                    )
+                );
+            }
+        }
     }
+
+    $normalize_text = static function ($value) {
+        $value = strtolower(trim(wp_strip_all_tags((string) $value)));
+        $value = preg_replace('/\s+/', ' ', $value);
+
+        return is_string($value) ? $value : '';
+    };
+
+    $normalized_query = $normalize_text($query);
+    $query_tokens = preg_split('/\s+/', $normalized_query);
+    if (!is_array($query_tokens)) {
+        $query_tokens = array();
+    }
+    $query_tokens = array_values(
+        array_filter(
+            $query_tokens,
+            static function ($token) {
+                return '' !== trim((string) $token);
+            }
+        )
+    );
+
+    $matches_query = static function (array $suggestion) use ($normalize_text, $normalized_query, $query_tokens) {
+        if ('' === $normalized_query) {
+            return true;
+        }
+
+        $candidates = array(
+            $suggestion['value'] ?? '',
+            $suggestion['label'] ?? '',
+            $suggestion['place_name'] ?? '',
+            $suggestion['city_name'] ?? '',
+            $suggestion['country_name'] ?? '',
+            $suggestion['secondary'] ?? '',
+        );
+
+        foreach ($candidates as $candidate) {
+            $normalized_candidate = $normalize_text($candidate);
+
+            if ('' === $normalized_candidate) {
+                continue;
+            }
+
+            if (false !== strpos($normalized_candidate, $normalized_query)) {
+                return true;
+            }
+
+            foreach ($query_tokens as $token) {
+                if ('' !== $token && false !== strpos($normalized_candidate, $token)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    $all_suggestions = $suggestions;
+    $suggestions = array_values(
+        array_filter(
+            $suggestions,
+            $matches_query
+        )
+    );
+
+    if (empty($suggestions)) {
+        $suggestions = $all_suggestions;
+    }
+
+    $score_suggestion = static function (array $suggestion) use ($normalize_text, $normalized_query, $query_tokens) {
+        if ('' === $normalized_query) {
+            return 0;
+        }
+
+        $type = (string) ($suggestion['type'] ?? '');
+        $score = 0;
+        $candidates = array(
+            $suggestion['value'] ?? '',
+            $suggestion['label'] ?? '',
+            $suggestion['place_name'] ?? '',
+            $suggestion['city_name'] ?? '',
+            $suggestion['country_name'] ?? '',
+            $suggestion['secondary'] ?? '',
+        );
+
+        foreach ($candidates as $candidate) {
+            $normalized_candidate = $normalize_text($candidate);
+
+            if ('' === $normalized_candidate) {
+                continue;
+            }
+
+            if ($normalized_candidate === $normalized_query) {
+                $score = max($score, 'city' === $type ? 200 : 190);
+                continue;
+            }
+
+            if (0 === strpos($normalized_candidate, $normalized_query)) {
+                $score = max($score, 'city' === $type ? 180 : 170);
+                continue;
+            }
+
+            if (false !== strpos($normalized_candidate, $normalized_query)) {
+                $score = max($score, 'city' === $type ? 140 : 130);
+                continue;
+            }
+
+            foreach ($query_tokens as $token) {
+                if ('' !== $token && false !== strpos($normalized_candidate, $token)) {
+                    $score = max($score, 'city' === $type ? 120 : 110);
+                    break 2;
+                }
+            }
+        }
+
+        if ('city' === $type) {
+            $score += 20;
+        } elseif ('airport' === $type) {
+            $score += 10;
+        }
+
+        return $score;
+    };
 
     usort(
         $suggestions,
-        static function ($left, $right) {
+        static function ($left, $right) use ($score_suggestion) {
+            $left_score = $score_suggestion($left);
+            $right_score = $score_suggestion($right);
+
+            if ($left_score !== $right_score) {
+                return $right_score <=> $left_score;
+            }
+
             $left_type = $left['type'] ?? '';
             $right_type = $right['type'] ?? '';
 
@@ -2246,7 +3036,7 @@ function walabu_duffel_booking_fetch_place_suggestions($query) {
         }
     );
 
-    return array_slice($suggestions, 0, 8);
+    return $suggestions;
 }
 
 function walabu_duffel_booking_handle_place_suggestions() {
@@ -2429,7 +3219,11 @@ function walabu_duffel_booking_icon($type) {
         'calendar' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 2h2v3H7V2Zm8 0h2v3h-2V2ZM4 5h16a1 1 0 0 1 1 1v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1Zm0 5v10h16V10H4Z" fill="currentColor"/></svg>',
         'users' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 2c-1.7 0-3.2.5-4.2 1.4A5.9 5.9 0 0 1 15 18v2h7v-1c0-4-2.2-7-5-7Zm-8 1c-3.3 0-6 2.7-6 6v1h12v-1c0-3.3-2.7-6-6-6Z" fill="currentColor"/></svg>',
         'swap' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 7h11l-2.5-2.5L17 3l5 5-5 5-1.5-1.5L18 9H7V7Zm10 10H6l2.5 2.5L7 21l-5-5 5-5 1.5 1.5L6 15h11v2Z" fill="currentColor"/></svg>',
+        'search' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.5 4a6.5 6.5 0 1 0 4.03 11.6l4.43 4.44 1.42-1.42-4.44-4.43A6.5 6.5 0 0 0 10.5 4Zm0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Z" fill="currentColor"/></svg>',
         'briefcase' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1h3a2 2 0 0 1 2 2v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a2 2 0 0 1 2-2h3Zm2 0h4V4h-4v1Zm-5 5v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8h-3v2H8v-2H5Z" fill="currentColor"/></svg>',
+        'hotel' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20v-9a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v9h-2v-4H6v4H4Zm5-8a2 2 0 1 0-2-2 2 2 0 0 0 2 2Zm9 2H6v-3h12v3Z" fill="currentColor"/></svg>',
+        'car' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 16h14l-1.2-5.1A2 2 0 0 0 15.9 9H8.1a2 2 0 0 0-1.9 1.9L5 16Zm-1 1.5V19a1 1 0 0 0 1 1h1.2a1 1 0 0 0 1-1V18h9.6v1a1 1 0 0 0 1 1H19a1 1 0 0 0 1-1v-1.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 17.5ZM8 13.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm10.5 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z" fill="currentColor"/></svg>',
+        'cruise' => '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 17.5c1.2 1 2.4 1.5 3.5 1.5s2.3-.5 3.5-1.5c1.2 1 2.4 1.5 3.5 1.5s2.3-.5 3.5-1.5c1.2 1 2.4 1.5 3.5 1.5v2c-1.4 0-2.8-.4-4.1-1.3-1.3.9-2.7 1.3-4.1 1.3s-2.8-.4-4.1-1.3C9.3 20.6 7.9 21 6.5 21S3.7 20.6 2.4 19.7 0 18.2 0 18.2l3-0.7Zm2.5-1.9V8.5h4V4h5v4h4v7.1c-.8.2-1.6.6-2.4 1.1-.8-.5-1.6-.8-2.4-1.1V10.5h-2v4.6c-.8.2-1.6.6-2.4 1.1-.8-.5-1.6-.8-2.4-1.1Z" fill="currentColor"/></svg>',
     );
 
     return $icons[$type] ?? '';
@@ -2454,7 +3248,7 @@ function walabu_duffel_booking_render_notice($notice) {
     );
 }
 
-function walabu_duffel_booking_render_offer_summary($selected_offer, $search_values, $view_state, $booking_step = 'details') {
+function walabu_duffel_booking_render_offer_summary($selected_offer, $search_values, $view_state, $booking_step = 'details', $all_offers = array()) {
     if (empty($selected_offer) || !is_array($selected_offer)) {
         return '';
     }
@@ -2482,6 +3276,7 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
     $selected_slices = !empty($selected_offer['slices']) && is_array($selected_offer['slices']) ? $selected_offer['slices'] : array();
     $primary_slice = !empty($selected_slices) ? reset($selected_slices) : array();
     $selected_airline = trim((string) ($selected_offer['airline_display_name'] ?? $selected_offer['airline_name'] ?? __('Unknown airline', 'walabu-travel')));
+    $selected_airline_code = trim((string) ($selected_offer['airline_iata_code'] ?? ''));
     $selected_price = trim((string) ($selected_offer['price'] ?? __('Unavailable', 'walabu-travel')));
     $selected_total_amount = sprintf(
         '%s',
@@ -2497,7 +3292,22 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
         'change' => !empty($selected_offer['change_summary']) ? $selected_offer['change_summary'] : __('No data on changes', 'walabu-travel'),
         'refund' => !empty($selected_offer['refund_summary']) ? $selected_offer['refund_summary'] : __('No data on refunds', 'walabu-travel'),
     );
-    $checkout_passenger_count = max(1, min(9, absint($search_values['passengers'] ?? 1)));
+    $passenger_count_lines = walabu_duffel_booking_get_passenger_count_lines($search_values);
+    $price_summary_base = walabu_duffel_booking_format_money(
+        $selected_offer['base_currency'] ?? $selected_offer['price_currency'] ?? '',
+        $selected_offer['base_amount'] ?? null
+    );
+    $price_summary_tax = walabu_duffel_booking_format_money(
+        $selected_offer['tax_currency'] ?? $selected_offer['price_currency'] ?? '',
+        $selected_offer['tax_amount'] ?? null
+    );
+    $price_summary_total = walabu_duffel_booking_format_money(
+        $selected_offer['price_currency'] ?? '',
+        $selected_offer['price_amount'] ?? null
+    );
+    $offer_expires_at = trim((string) ($selected_offer['expires_at'] ?? ''));
+    $checkout_passenger_manifest = walabu_duffel_booking_build_passenger_manifest($search_values);
+    $checkout_passenger_count = count($checkout_passenger_manifest);
     $checkout_passengers = array();
     $checkout_errors = array();
     $checkout_notice = '';
@@ -2557,6 +3367,173 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
         }
     }
 
+    if ('checkout' !== $booking_step) {
+        $selected_itinerary_key = (string) ($selected_offer['itinerary_key'] ?? '');
+        $fare_options = array_values(
+            array_filter(
+                (array) $all_offers,
+                static function ($offer) use ($selected_itinerary_key, $selected_offer) {
+                    if (!is_array($offer)) {
+                        return false;
+                    }
+
+                    if ('' === $selected_itinerary_key) {
+                        return !empty($offer['offer_id']) && $offer['offer_id'] === ($selected_offer['offer_id'] ?? '');
+                    }
+
+                    return ($offer['itinerary_key'] ?? '') === $selected_itinerary_key;
+                }
+            )
+        );
+
+        if (empty($fare_options)) {
+            $fare_options = array($selected_offer);
+        }
+
+        usort(
+            $fare_options,
+            static function ($left, $right) {
+                return (float) ($left['price_amount'] ?? 0) <=> (float) ($right['price_amount'] ?? 0);
+            }
+        );
+
+        $selected_per_passenger = walabu_duffel_booking_format_money(
+            $selected_offer['price_currency'] ?? '',
+            $selected_offer['price_per_passenger'] ?? null
+        );
+        $booking_page_url = walabu_duffel_booking_get_booking_page_url();
+
+        ob_start();
+        ?>
+        <section class="booking-trip-selector" aria-label="<?php esc_attr_e('Trip selection', 'walabu-travel'); ?>">
+            <div class="booking-trip-selector__topbar">
+                <div class="booking-trip-selector__heading">
+                    <a class="booking-trip-selector__back" href="<?php echo esc_url($back_url); ?>">
+                        <span aria-hidden="true">←</span>
+                        <span><?php esc_html_e('Back to search', 'walabu-travel'); ?></span>
+                    </a>
+                    <h1 class="booking-trip-selector__title">
+                        <?php
+                        echo esc_html(
+                            sprintf(
+                                __('Your trip from %1$s to %2$s', 'walabu-travel'),
+                                $route_origin,
+                                $route_destination
+                            )
+                        );
+                        ?>
+                    </h1>
+                </div>
+                <div class="booking-trip-selector__checkout-meta">
+                    <div class="booking-trip-selector__checkout-price"><?php echo esc_html($selected_per_passenger); ?></div>
+                    <div class="booking-trip-selector__checkout-note"><?php esc_html_e('total per passenger', 'walabu-travel'); ?></div>
+                    <a class="booking-trip-selector__checkout" href="<?php echo esc_url($checkout_url); ?>">
+                        <span><?php esc_html_e('Continue to checkout', 'walabu-travel'); ?></span>
+                        <span aria-hidden="true">→</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="booking-trip-selector__route">
+                <h2>
+                    <?php echo esc_html(trim(($search_values['origin_label'] ?: $search_values['origin']) . ' → ' . ($search_values['destination_label'] ?: $search_values['destination']))); ?>
+                </h2>
+                <p>
+                    <?php
+                    echo esc_html(
+                        trim(
+                            sprintf(
+                                '%1$s • %2$s',
+                                $title_date,
+                                $trip_label
+                            )
+                        )
+                    );
+                    ?>
+                </p>
+            </div>
+
+            <div class="booking-trip-selector__section-head">
+                <h3><?php esc_html_e('Upgrade your fare', 'walabu-travel'); ?></h3>
+            </div>
+
+            <div class="booking-trip-selector__cards">
+                <?php foreach ($fare_options as $fare_option) : ?>
+                    <?php
+                    $is_selected_option = walabu_duffel_booking_offer_matches_selected_state($fare_option, $selected_offer);
+                    $fare_select_url = $is_selected_option
+                        ? $checkout_url
+                        : walabu_duffel_booking_build_results_url(
+                            $search_values,
+                            $view_state,
+                            array(
+                                'o' => !empty($fare_option['offer_id']) ? $fare_option['offer_id'] : null,
+                                't' => walabu_duffel_booking_cache_offer_snapshot($search_values, $fare_option),
+                                'b' => 'details',
+                            ),
+                            $booking_page_url
+                        );
+                    $fare_price_per_passenger = walabu_duffel_booking_format_money(
+                        $fare_option['price_currency'] ?? '',
+                        $fare_option['price_per_passenger'] ?? null
+                    );
+                    ?>
+                    <a
+                        class="booking-trip-selector__card <?php echo $is_selected_option ? 'is-selected' : ''; ?>"
+                        href="<?php echo esc_url($fare_select_url); ?>"
+                        aria-label="<?php echo esc_attr(trim(($fare_option['fare_brand_name'] ?? $fare_label) . ' ' . __('fare', 'walabu-travel') . ' - ' . ($fare_price_per_passenger ?: ''))); ?>"
+                    >
+                        <div class="booking-trip-selector__card-head">
+                            <div class="booking-trip-selector__carrier-mark">
+                                <?php if (!empty($fare_option['airline_logo_url'])) : ?>
+                                    <img src="<?php echo esc_url($fare_option['airline_logo_url']); ?>" alt="<?php echo esc_attr($fare_option['airline_name'] ?? $selected_airline); ?>" loading="lazy">
+                                <?php else : ?>
+                                    <?php echo esc_html(strtoupper(substr(preg_replace('/[^A-Z]/', '', (string) ($fare_option['airline_name'] ?? $selected_airline)), 0, 2)) ?: 'FL'); ?>
+                                <?php endif; ?>
+                            </div>
+                            <div class="booking-trip-selector__card-titlewrap">
+                                <h4><?php echo esc_html($fare_option['fare_brand_name'] ?? $fare_label); ?></h4>
+                                <p><?php echo esc_html(sprintf(__('Cabin: %s', 'walabu-travel'), $fare_label)); ?></p>
+                            </div>
+                            <span class="booking-trip-selector__radio <?php echo $is_selected_option ? 'is-active' : ''; ?>" aria-hidden="true"></span>
+                        </div>
+
+                        <div class="booking-trip-selector__feature-box">
+                            <span class="booking-trip-selector__feature-title"><?php esc_html_e('Bags', 'walabu-travel'); ?></span>
+                            <ul class="booking-trip-selector__feature-list">
+                                <?php foreach ((array) ($fare_option['baggage_highlights'] ?? array()) as $highlight) : ?>
+                                    <li><?php echo esc_html($highlight); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+
+                        <div class="booking-trip-selector__feature-box">
+                            <span class="booking-trip-selector__feature-title"><?php esc_html_e('Flexibility', 'walabu-travel'); ?></span>
+                            <ul class="booking-trip-selector__feature-list">
+                                <?php foreach ((array) ($fare_option['flexibility_highlights'] ?? array()) as $highlight) : ?>
+                                    <li><?php echo esc_html($highlight); ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+
+                        <div class="booking-trip-selector__card-footer">
+                            <div class="booking-trip-selector__card-price">
+                                <strong><?php echo esc_html($fare_price_per_passenger); ?></strong>
+                                <span><?php esc_html_e('per passenger', 'walabu-travel'); ?></span>
+                            </div>
+                            <span class="booking-trip-selector__card-action <?php echo $is_selected_option ? 'is-primary' : ''; ?>">
+                                <span><?php echo $is_selected_option ? esc_html__('Continue to checkout', 'walabu-travel') : esc_html__('Select fare', 'walabu-travel'); ?></span>
+                                <span aria-hidden="true">→</span>
+                            </span>
+                        </div>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
+        <?php
+        return ob_get_clean();
+    }
+
     ob_start();
     ?>
     <section class="booking-summary" aria-label="<?php esc_attr_e('Selected flight summary', 'walabu-travel'); ?>">
@@ -2574,7 +3551,7 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
                         <?php if (!empty($selected_offer['airline_logo_url'])) : ?>
                             <img src="<?php echo esc_url($selected_offer['airline_logo_url']); ?>" alt="<?php echo esc_attr($selected_airline); ?>" loading="lazy">
                         <?php else : ?>
-                            <?php echo esc_html(walabu_duffel_booking_get_airline_key($selected_airline) ? strtoupper(substr(preg_replace('/[^A-Z]/', '', $selected_airline), 0, 2)) : 'FL'); ?>
+                            <?php echo esc_html(strtoupper(substr(preg_replace('/[^A-Z]/', '', (string) ($selected_airline_code ?: $selected_airline)), 0, 2)) ?: 'FL'); ?>
                         <?php endif; ?>
                     </div>
                     <div class="booking-summary__fare-times">
@@ -2609,7 +3586,15 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
                         <li><?php echo esc_html(sprintf(__('Changes: %s', 'walabu-travel'), $conditions['change'])); ?></li>
                         <li><?php echo esc_html(sprintf(__('Refunds: %s', 'walabu-travel'), $conditions['refund'])); ?></li>
                         <li><?php echo esc_html(__('Hold space information unavailable', 'walabu-travel')); ?></li>
-                        <li><?php echo esc_html(!empty($selected_offer['private_fares']) ? __('Private fare applied', 'walabu-travel') : __('No data about checked bags', 'walabu-travel')); ?></li>
+                        <li><?php echo esc_html(
+                            !empty($selected_offer['private_fares'])
+                                ? __('Private fare applied', 'walabu-travel')
+                                : (
+                                    '' !== ($selected_baggage_summary = walabu_duffel_booking_get_offer_available_service_baggage_summary($selected_offer))
+                                        ? $selected_baggage_summary
+                                        : __('Checked bag details unavailable', 'walabu-travel')
+                                )
+                        ); ?></li>
                     </ul>
                 </div>
 
@@ -2641,6 +3626,46 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
                     </strong>
                 </div>
 
+                <section class="booking-summary__price-box">
+                    <div class="booking-summary__price-alert">
+                        <div class="booking-summary__price-alert-copy">
+                            <h4><?php esc_html_e('Book before you miss it!', 'walabu-travel'); ?></h4>
+                            <p><?php esc_html_e('This offer usually expires within 30 minutes.', 'walabu-travel'); ?></p>
+                            <div class="booking-summary__price-timer" <?php echo '' !== $offer_expires_at ? 'data-expiry-at="' . esc_attr($offer_expires_at) . '"' : ''; ?>>
+                                <?php echo '' !== $offer_expires_at ? esc_html__('30:00', 'walabu-travel') : esc_html__('--:--', 'walabu-travel'); ?>
+                            </div>
+                        </div>
+                        <div class="booking-summary__price-alert-icon" aria-hidden="true">◷</div>
+                    </div>
+
+                    <div class="booking-summary__price-summary">
+                        <h4><?php esc_html_e('Price summary', 'walabu-travel'); ?></h4>
+
+                        <div class="booking-summary__price-row">
+                            <div class="booking-summary__price-copy">
+                                <strong><?php esc_html_e('Passengers', 'walabu-travel'); ?></strong>
+                                <?php foreach ($passenger_count_lines as $passenger_line) : ?>
+                                    <span><?php echo esc_html($passenger_line); ?></span>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="booking-summary__price-value"><?php echo esc_html($price_summary_base); ?></div>
+                        </div>
+
+                        <div class="booking-summary__price-row">
+                            <div class="booking-summary__price-copy">
+                                <strong><?php esc_html_e('Taxes & Fees', 'walabu-travel'); ?></strong>
+                                <span><?php esc_html_e('Duffel airline taxes and fees', 'walabu-travel'); ?></span>
+                            </div>
+                            <div class="booking-summary__price-value"><?php echo esc_html($price_summary_tax); ?></div>
+                        </div>
+
+                        <div class="booking-summary__price-total">
+                            <span><?php esc_html_e('Total', 'walabu-travel'); ?></span>
+                            <strong><?php echo esc_html($price_summary_total); ?></strong>
+                        </div>
+                    </div>
+                </section>
+
                 <div class="booking-summary__panel-section">
                     <div class="booking-summary__panel-row">
                         <span><?php esc_html_e('Changes', 'walabu-travel'); ?></span>
@@ -2656,13 +3681,9 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
                     </div>
                     <div class="booking-summary__panel-row">
                         <span><?php esc_html_e('Passengers', 'walabu-travel'); ?></span>
-                        <strong><?php echo esc_html(sprintf(_n('%d Adult', '%d Adults', (int) ($search_values['passengers'] ?? 1), 'walabu-travel'), (int) ($search_values['passengers'] ?? 1))); ?></strong>
+                        <strong><?php echo esc_html(walabu_duffel_booking_format_passenger_summary($search_values)); ?></strong>
                     </div>
-                    <div class="booking-summary__panel-row">
-                        <span><?php esc_html_e('Offer ID', 'walabu-travel'); ?></span>
-                        <strong><?php echo esc_html((string) ($selected_offer['offer_id'] ?? '')); ?></strong>
                     </div>
-                </div>
 
                 <div class="booking-summary__panel-total">
                     <span><?php esc_html_e('total amount', 'walabu-travel'); ?></span>
@@ -2674,8 +3695,9 @@ function walabu_duffel_booking_render_offer_summary($selected_offer, $search_val
                         <input type="hidden" name="walabu_checkout_submit" value="1">
                         <?php for ($passenger_index = 0; $passenger_index < $checkout_passenger_count; $passenger_index++) : ?>
                             <?php $passenger = $checkout_passengers[$passenger_index] ?? array(); ?>
+                            <?php $passenger_meta = $checkout_passenger_manifest[$passenger_index] ?? array('label' => sprintf(__('Passenger %d', 'walabu-travel'), $passenger_index + 1)); ?>
                             <fieldset class="booking-summary__passenger">
-                                <legend><?php echo esc_html(sprintf(__('Passenger %d', 'walabu-travel'), $passenger_index + 1)); ?></legend>
+                                <legend><?php echo esc_html($passenger_meta['label'] ?? sprintf(__('Passenger %d', 'walabu-travel'), $passenger_index + 1)); ?></legend>
                                 <div class="booking-summary__field-grid">
                                     <label class="booking-summary__field">
                                         <span><?php esc_html_e('Title', 'walabu-travel'); ?></span>
@@ -2752,12 +3774,35 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
 
     if (empty($selected_offer)) {
         $selected_offer = walabu_duffel_booking_find_offer_by_id($offers, $selected_offer_id);
+    } else {
+        $current_offer = walabu_duffel_booking_find_offer_by_id($offers, $selected_offer_id);
+
+        if (is_array($current_offer)) {
+            $selected_offer = array_merge($selected_offer, $current_offer);
+        }
+    }
+
+    if (!empty($selected_offer_id)) {
+        $live_offer = walabu_duffel_booking_get_live_offer_snapshot($selected_offer_id, walabu_duffel_booking_get_access_token());
+
+        if (is_array($live_offer)) {
+            $selected_offer = empty($selected_offer) ? $live_offer : array_merge($selected_offer, $live_offer);
+
+            foreach ($offers as $index => $offer) {
+                if (!is_array($offer) || (string) ($offer['offer_id'] ?? '') !== (string) $selected_offer_id) {
+                    continue;
+                }
+
+                $offers[$index] = array_merge($offer, $live_offer);
+                break;
+            }
+        }
     }
 
     $booking_step = walabu_duffel_booking_get_booking_step();
 
     if (('details' === $booking_step || 'checkout' === $booking_step) && !empty($selected_offer)) {
-        return walabu_duffel_booking_render_offer_summary($selected_offer, $search_values, $view_state, $booking_step);
+        return walabu_duffel_booking_render_offer_summary($selected_offer, $search_values, $view_state, $booking_step, $offers);
     }
 
     ob_start();
@@ -2840,6 +3885,13 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                                     <label class="booking-results-filter__option">
                                         <span class="booking-results-filter__check">
                                             <input type="checkbox" name="filter_airlines[]" value="<?php echo esc_attr($key); ?>" <?php checked(in_array($key, $view_state['filter_airlines'], true)); ?>>
+                                            <span class="booking-results-filter__mark <?php echo !empty($option['logo_url']) ? 'has-logo' : 'has-initials'; ?>">
+                                                <?php if (!empty($option['logo_url'])) : ?>
+                                                    <img src="<?php echo esc_url($option['logo_url']); ?>" alt="<?php echo esc_attr($option['label'] ?? ''); ?>" loading="lazy">
+                                                <?php else : ?>
+                                                    <?php echo esc_html(strtoupper(substr(preg_replace('/[^A-Z]/', '', (string) ($option['label'] ?? '')), 0, 2)) ?: 'FL'); ?>
+                                                <?php endif; ?>
+                                            </span>
                                             <span><?php echo esc_html($option['label']); ?></span>
                                         </span>
                                         <span class="booking-results-filter__price"><?php echo esc_html(walabu_duffel_booking_format_money($option['currency'], $option['min_price'])); ?></span>
@@ -2852,6 +3904,62 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
             </aside>
 
             <div class="booking-results__main">
+                <div class="booking-results__trip-types" aria-label="<?php esc_attr_e('Trip type selection', 'walabu-travel'); ?>">
+                    <?php foreach (array(
+                        'one_way' => __('One way', 'walabu-travel'),
+                        'round_trip' => __('Round trip', 'walabu-travel'),
+                        'multi_city' => __('Multi-city', 'walabu-travel'),
+                    ) as $trip_key => $trip_label_item) : ?>
+                        <a
+                            class="booking-results__trip-type <?php echo ($view_state['trip_type'] ?? ($search_values['trip_type'] ?? 'one_way')) === $trip_key ? 'is-active' : ''; ?>"
+                            href="<?php echo esc_url(walabu_duffel_booking_build_results_url($search_values, $view_state, array('trip_type' => $trip_key, 'page' => 1))); ?>"
+                        >
+                            <?php echo esc_html($trip_label_item); ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+
+                <?php if (!empty($context['airline_options'])) : ?>
+                    <?php
+                    $active_airline_filter = (string) ($view_state['filter_airlines'][0] ?? '');
+                    ?>
+                    <div class="booking-results__airlines" aria-label="<?php esc_attr_e('Available airlines', 'walabu-travel'); ?>">
+                        <a
+                            class="booking-results__airline-card <?php echo '' === $active_airline_filter ? 'is-active' : ''; ?>"
+                            href="<?php echo esc_url(walabu_duffel_booking_build_results_url($search_values, $view_state, array('filter_airlines' => null))); ?>"
+                        >
+                            <span class="booking-results__airline-name"><?php esc_html_e('All airlines', 'walabu-travel'); ?></span>
+                            <strong class="booking-results__airline-price">
+                                <?php echo esc_html(!empty($context['tabs']['best']['offer']['price']) ? $context['tabs']['best']['offer']['price'] : __('Unavailable', 'walabu-travel')); ?>
+                            </strong>
+                        </a>
+                        <?php foreach ($context['airline_options'] as $key => $option) : ?>
+                            <?php
+                            $is_active_airline = $active_airline_filter === (string) $key;
+                            $airline_url = walabu_duffel_booking_build_results_url($search_values, $view_state, array('filter_airlines' => array($key)));
+                            $airline_name = (string) ($option['label'] ?? '');
+                            $airline_logo_url = (string) ($option['logo_url'] ?? '');
+                            ?>
+                            <a
+                                class="booking-results__airline-card <?php echo $is_active_airline ? 'is-active' : ''; ?>"
+                                href="<?php echo esc_url($airline_url); ?>"
+                            >
+                                <span class="booking-results__airline-mark <?php echo '' !== $airline_logo_url ? 'has-logo' : 'has-initials'; ?>">
+                                    <?php if ('' !== $airline_logo_url) : ?>
+                                        <img src="<?php echo esc_url($airline_logo_url); ?>" alt="<?php echo esc_attr($airline_name); ?>" loading="lazy">
+                                    <?php else : ?>
+                                        <?php echo esc_html(strtoupper(substr(preg_replace('/[^A-Z]/', '', $airline_name), 0, 2)) ?: 'FL'); ?>
+                                    <?php endif; ?>
+                                </span>
+                                <span class="booking-results__airline-name"><?php echo esc_html($option['label']); ?></span>
+                                <strong class="booking-results__airline-price">
+                                    <?php echo esc_html(walabu_duffel_booking_format_money($option['currency'], $option['min_price'])); ?>
+                                </strong>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
                 <div class="booking-results__summary">
                     <?php foreach ($context['tabs'] as $tab_key => $tab) : ?>
                         <a
@@ -2882,6 +3990,36 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                     </div>
                 <?php endif; ?>
 
+                <?php if (($context['results_total_pages'] ?? 1) > 1) : ?>
+                    <nav class="booking-results__pagination" aria-label="<?php esc_attr_e('Flight pages', 'walabu-travel'); ?>">
+                        <?php
+                        $current_page = (int) ($context['results_page'] ?? 1);
+                        $total_pages = (int) ($context['results_total_pages'] ?? 1);
+                        $prev_page = max(1, $current_page - 1);
+                        $next_page = min($total_pages, $current_page + 1);
+                        $prev_disabled = $current_page <= 1;
+                        $next_disabled = $current_page >= $total_pages;
+                        ?>
+                        <a
+                            class="booking-results__pagination-arrow <?php echo $prev_disabled ? 'is-disabled' : ''; ?>"
+                            href="<?php echo esc_url($prev_disabled ? '#' : walabu_duffel_booking_build_results_url($search_values, $view_state, array('page' => $prev_page))); ?>"
+                            <?php echo $prev_disabled ? 'aria-disabled="true" tabindex="-1"' : ''; ?>
+                        >
+                            <span aria-hidden="true">‹</span>
+                        </a>
+                        <div class="booking-results__pagination-status">
+                            <?php echo esc_html(sprintf(__('Page %1$d of %2$d', 'walabu-travel'), $current_page, $total_pages)); ?>
+                        </div>
+                        <a
+                            class="booking-results__pagination-arrow <?php echo $next_disabled ? 'is-disabled' : ''; ?>"
+                            href="<?php echo esc_url($next_disabled ? '#' : walabu_duffel_booking_build_results_url($search_values, $view_state, array('page' => $next_page))); ?>"
+                            <?php echo $next_disabled ? 'aria-disabled="true" tabindex="-1"' : ''; ?>
+                        >
+                            <span aria-hidden="true">›</span>
+                        </a>
+                    </nav>
+                <?php endif; ?>
+
                 <?php if (empty($context['offers'])) : ?>
                     <div class="booking-results__empty">
                         <h3><?php esc_html_e('No offers match your filters', 'walabu-travel'); ?></h3>
@@ -2894,8 +4032,33 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                     <div class="booking-results__cards">
                         <?php foreach ($context['offers'] as $index => $offer) : ?>
                             <?php
-                            $primary_carrier = !empty($offer['airline_names'][0]) ? $offer['airline_names'][0] : $offer['airline_name'];
-                            $primary_carrier = trim((string) $primary_carrier);
+                            $primary_carrier = trim((string) ($offer['airline_name'] ?? ''));
+                            $primary_carrier_code = trim((string) ($offer['airline_iata_code'] ?? ''));
+                            $is_selected_offer = walabu_duffel_booking_offer_matches_selected_state($offer, $selected_offer);
+                            $card_baggage_summary = !empty($offer['baggage_highlights']) && is_array($offer['baggage_highlights'])
+                                ? implode(' • ', array_values(array_filter(array_map('trim', $offer['baggage_highlights']))))
+                                : walabu_duffel_booking_get_offer_available_service_baggage_summary($selected_offer ?? $offer);
+                            if ('' === $card_baggage_summary) {
+                                $card_baggage_summary = __('Checked bag details unavailable', 'walabu-travel');
+                            }
+                            $baggage_summary = !empty($offer['baggage_highlights']) && is_array($offer['baggage_highlights'])
+                                ? implode(' • ', array_values(array_filter(array_map('trim', $offer['baggage_highlights']))))
+                                : __('Bag details available after selection', 'walabu-travel');
+                            $layover_parts = array();
+
+                            foreach ((array) ($offer['slices'] ?? array()) as $slice_summary) {
+                                $slice_layovers = trim((string) ($slice_summary['layovers'] ?? ''));
+
+                                if ('' !== $slice_layovers) {
+                                    $layover_parts[] = $slice_layovers;
+                                } elseif (!empty($slice_summary['stops'])) {
+                                    $layover_parts[] = trim((string) $slice_summary['stops']);
+                                }
+                            }
+
+                            $layover_summary = !empty($layover_parts)
+                                ? implode(' • ', array_values(array_unique(array_filter($layover_parts))))
+                                : __('Nonstop', 'walabu-travel');
                             $select_url = walabu_duffel_booking_build_results_url(
                                 $search_values,
                                 $view_state,
@@ -2908,9 +4071,8 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                             );
                             ?>
                             <article
-                                class="booking-result-card <?php echo 0 === $index ? 'is-featured' : ''; ?> <?php echo (!empty($offer['offer_id']) && $offer['offer_id'] === $selected_offer_id) ? 'is-selected' : ''; ?> <?php echo $index >= WALABU_DUFFEL_BOOKING_RESULTS_LIMIT ? 'is-hidden-by-default' : ''; ?>"
+                                class="booking-result-card <?php echo 0 === $index ? 'is-featured' : ''; ?> <?php echo $is_selected_offer ? 'is-selected' : ''; ?>"
                                 data-offer-id="<?php echo esc_attr($offer['offer_id']); ?>"
-                                <?php echo $index >= WALABU_DUFFEL_BOOKING_RESULTS_LIMIT ? 'hidden' : ''; ?>
                             >
                                 <?php if (0 === $index) : ?>
                                     <div class="booking-result-card__flag">
@@ -2927,7 +4089,7 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                                                         <?php if (!empty($offer['airline_logo_url'])) : ?>
                                                             <img src="<?php echo esc_url($offer['airline_logo_url']); ?>" alt="<?php echo esc_attr($primary_carrier); ?>" loading="lazy">
                                                         <?php else : ?>
-                                                            <?php echo esc_html(strtoupper(substr(preg_replace('/[^A-Z]/', '', $primary_carrier), 0, 2)) ?: 'FL'); ?>
+                                                            <?php echo esc_html(strtoupper(substr(preg_replace('/[^A-Z]/', '', $primary_carrier_code ?: $primary_carrier), 0, 2)) ?: 'FL'); ?>
                                                         <?php endif; ?>
                                                     </span>
                                                 </div>
@@ -2957,6 +4119,7 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                                                     </div>
                                                     <div class="booking-result-card__route"><?php echo esc_html(trim($slice['origin_code'] . ' - ' . $slice['destination_code'])); ?></div>
                                                     <div class="booking-result-card__carriers"><?php echo esc_html($slice['carriers_text']); ?></div>
+                                                    <div class="booking-result-card__baggage"><?php echo esc_html($card_baggage_summary); ?></div>
                                                 </div>
 
                                                 <div class="booking-result-card__stops">
@@ -2977,8 +4140,12 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                                             <summary><?php esc_html_e('Show flight details', 'walabu-travel'); ?></summary>
                                             <div class="booking-result-card__details-grid">
                                                 <div class="booking-result-card__details-item">
-                                                    <span><?php esc_html_e('Offer ID', 'walabu-travel'); ?></span>
-                                                    <code><?php echo esc_html($offer['offer_id']); ?></code>
+                                                    <span><?php esc_html_e('Baggage', 'walabu-travel'); ?></span>
+                                                    <strong><?php echo esc_html($baggage_summary); ?></strong>
+                                                </div>
+                                                <div class="booking-result-card__details-item">
+                                                    <span><?php esc_html_e('Layovers', 'walabu-travel'); ?></span>
+                                                    <strong><?php echo esc_html($layover_summary); ?></strong>
                                                 </div>
                                                 <div class="booking-result-card__details-item">
                                                     <span><?php esc_html_e('Changes', 'walabu-travel'); ?></span>
@@ -3017,23 +4184,15 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
                                             type="button"
                                             class="booking-result-card__select"
                                             data-select-url="<?php echo esc_url($select_url); ?>"
-                                            <?php echo (!empty($offer['offer_id']) && $offer['offer_id'] === $selected_offer_id) ? 'disabled aria-disabled="true"' : ''; ?>
+                                            <?php echo $is_selected_offer ? 'disabled aria-disabled="true"' : ''; ?>
                                         >
-                                            <?php echo (!empty($offer['offer_id']) && $offer['offer_id'] === $selected_offer_id) ? esc_html__('Selected', 'walabu-travel') : esc_html__('Select', 'walabu-travel'); ?>
+                                            <?php echo $is_selected_offer ? esc_html__('Selected', 'walabu-travel') : esc_html__('Select', 'walabu-travel'); ?>
                                         </button>
-                                        <div class="booking-result-card__offer-id"><?php echo esc_html($offer['offer_id']); ?></div>
                                     </aside>
                                 </div>
                             </article>
                         <?php endforeach; ?>
                     </div>
-                    <?php if (count($context['offers']) > WALABU_DUFFEL_BOOKING_RESULTS_LIMIT) : ?>
-                        <div class="booking-results__load-more-wrap">
-                            <button type="button" class="booking-results__load-more" data-load-more>
-                                <?php echo esc_html(sprintf(__('Load more flights (%d more)', 'walabu-travel'), count($context['offers']) - WALABU_DUFFEL_BOOKING_RESULTS_LIMIT)); ?>
-                            </button>
-                        </div>
-                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -3045,11 +4204,34 @@ function walabu_duffel_booking_render_results($offers, $search_values) {
 function walabu_duffel_booking_form($atts = array()) {
     $atts = shortcode_atts(array(
         'variant' => 'default',
+        'reset_on_load' => false,
+        'hide_results' => false,
     ), $atts, 'walabu_flight_search');
-    $search_result = walabu_duffel_booking_get_search_result();
+    $should_reset_form = wp_validate_boolean($atts['reset_on_load']);
+    $should_hide_results = wp_validate_boolean($atts['hide_results']);
+    $search_result = $should_reset_form
+        ? array(
+            'state' => array(
+                'submitted' => false,
+                'values' => walabu_duffel_booking_default_form_values(),
+                'errors' => array(),
+            ),
+            'notice' => null,
+            'offers' => array(),
+        )
+        : walabu_duffel_booking_get_search_result();
     $values = $search_result['state']['values'];
     $cabin_classes = walabu_duffel_booking_allowed_cabin_classes();
     $max_connection_options = walabu_duffel_booking_allowed_max_connections();
+    $booking_page_url = walabu_duffel_booking_get_booking_page_url();
+    $form_action = $should_reset_form
+        ? $booking_page_url
+        : walabu_duffel_booking_get_current_request_url();
+    $is_hero_variant = 'hero' === $atts['variant'];
+    $passenger_summary = walabu_duffel_booking_format_passenger_summary($values);
+    $passenger_panel_id = function_exists('wp_unique_id')
+        ? wp_unique_id('walabu-passenger-panel-')
+        : uniqid('walabu-passenger-panel-');
 
     ob_start();
     ?>
@@ -3058,64 +4240,116 @@ function walabu_duffel_booking_form($atts = array()) {
 
         <div class="booking-widget__panel">
             <ul class="booking-widget__service-tabs" aria-label="<?php esc_attr_e('Travel services', 'walabu-travel'); ?>">
-                <li class="booking-widget__service-tab is-active"><?php echo walabu_duffel_booking_icon('plane'); ?> <?php esc_html_e('Flights', 'walabu-travel'); ?></li>
-                <li class="booking-widget__service-tab"><?php echo walabu_duffel_booking_icon('briefcase'); ?> <?php esc_html_e('Flights + Hotel', 'walabu-travel'); ?> <span class="booking-widget__service-badge"><?php esc_html_e('Save more', 'walabu-travel'); ?></span></li>
-                <li class="booking-widget__service-tab"><?php esc_html_e('Hotels', 'walabu-travel'); ?></li>
-                <li class="booking-widget__service-tab"><?php esc_html_e('Cars', 'walabu-travel'); ?></li>
-                <li class="booking-widget__service-tab"><?php esc_html_e('Cruises', 'walabu-travel'); ?></li>
+                <li>
+                    <button class="booking-widget__service-tab <?php echo 'flight' === ($values['service_type'] ?? 'flight') ? 'is-active' : ''; ?>" type="button" data-service-type="flight" data-service-url="<?php echo esc_url($booking_page_url); ?>">
+                        <?php echo walabu_duffel_booking_icon('plane'); ?> <?php esc_html_e('Flights', 'walabu-travel'); ?>
+                    </button>
+                </li>
+                <li>
+                    <button class="booking-widget__service-tab <?php echo 'flight_hotel' === ($values['service_type'] ?? 'flight') ? 'is-active' : ''; ?>" type="button" data-service-type="flight_hotel">
+                        <?php echo walabu_duffel_booking_icon('briefcase'); ?> <?php esc_html_e('Flights + Hotel', 'walabu-travel'); ?> <span class="booking-widget__service-badge"><?php echo $is_hero_variant ? esc_html__('Save up to $876', 'walabu-travel') : esc_html__('Save more', 'walabu-travel'); ?></span>
+                    </button>
+                </li>
+                <li>
+                    <button class="booking-widget__service-tab <?php echo 'hotel' === ($values['service_type'] ?? 'flight') ? 'is-active' : ''; ?>" type="button" data-service-type="hotel">
+                        <?php echo walabu_duffel_booking_icon('hotel'); ?> <?php esc_html_e('Hotels', 'walabu-travel'); ?>
+                    </button>
+                </li>
+                <li>
+                    <button class="booking-widget__service-tab <?php echo 'car' === ($values['service_type'] ?? 'flight') ? 'is-active' : ''; ?>" type="button" data-service-type="car">
+                        <?php echo walabu_duffel_booking_icon('car'); ?> <?php esc_html_e('Cars', 'walabu-travel'); ?>
+                    </button>
+                </li>
+                <li>
+                    <button class="booking-widget__service-tab <?php echo 'cruise' === ($values['service_type'] ?? 'flight') ? 'is-active' : ''; ?>" type="button" data-service-type="cruise">
+                        <?php echo walabu_duffel_booking_icon('cruise'); ?> <?php esc_html_e('Cruises', 'walabu-travel'); ?>
+                    </button>
+                </li>
             </ul>
 
             <div class="booking-widget__form-shell">
-                <form method="get" action="<?php echo esc_url(walabu_duffel_booking_get_current_request_url()); ?>" class="booking-widget__form" novalidate>
-                    <div class="booking-widget__topline">
-                        <div class="booking-widget__trip-types" role="group" aria-label="<?php esc_attr_e('Trip type', 'walabu-travel'); ?>">
-                            <button class="booking-widget__trip-button <?php echo 'round_trip' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="round_trip"><?php esc_html_e('Round trip', 'walabu-travel'); ?></button>
-                            <button class="booking-widget__trip-button <?php echo 'one_way' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="one_way"><?php esc_html_e('One way', 'walabu-travel'); ?></button>
-                            <button class="booking-widget__trip-button <?php echo 'multi_city' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="multi_city"><?php esc_html_e('Multi-city', 'walabu-travel'); ?></button>
+                <form method="get" action="<?php echo esc_url($form_action); ?>" class="booking-widget__form" novalidate>
+                    <input type="hidden" name="service_type" value="<?php echo esc_attr($values['service_type'] ?? 'flight'); ?>" data-service-type-input>
+                    <?php if ($is_hero_variant) : ?>
+                        <div class="booking-widget__topline booking-widget__topline--hero">
+                            <div class="booking-widget__trip-types" role="group" aria-label="<?php esc_attr_e('Trip type', 'walabu-travel'); ?>">
+                                <button class="booking-widget__trip-button <?php echo 'round_trip' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="round_trip"><?php esc_html_e('Round trip', 'walabu-travel'); ?></button>
+                                <button class="booking-widget__trip-button <?php echo 'one_way' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="one_way"><?php esc_html_e('One way', 'walabu-travel'); ?></button>
+                                <button class="booking-widget__trip-button <?php echo 'multi_city' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="multi_city"><?php esc_html_e('Multi-city', 'walabu-travel'); ?></button>
+                            </div>
+
+                            <div class="booking-widget__utility-row booking-widget__utility-row--hero">
+                                <label class="booking-widget__utility" for="walabu-cabin-class">
+                                    <select id="walabu-cabin-class" name="cabin_class">
+                                        <?php foreach ($cabin_classes as $value => $label) : ?>
+                                            <option value="<?php echo esc_attr($value); ?>" <?php selected($values['cabin_class'], $value); ?>>
+                                                <?php echo esc_html($label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+
+                                <label class="booking-widget__bundle booking-widget__bundle--hero" for="walabu-bundle-hotel">
+                                    <span class="booking-widget__bundle-pill"><?php esc_html_e('Bundle with a hotel', 'walabu-travel'); ?></span>
+                                    <input id="walabu-bundle-hotel" type="checkbox" value="1" <?php checked('flight_hotel' === ($values['service_type'] ?? 'flight')); ?> data-bundle-hotel-toggle>
+                                    <span class="booking-widget__bundle-note"><?php esc_html_e('Save up to $876 with flight + hotel packages', 'walabu-travel'); ?></span>
+                                </label>
+                            </div>
                         </div>
+                    <?php else : ?>
+                        <div class="booking-widget__topline">
+                            <div class="booking-widget__trip-types" role="group" aria-label="<?php esc_attr_e('Trip type', 'walabu-travel'); ?>">
+                                <button class="booking-widget__trip-button <?php echo 'round_trip' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="round_trip"><?php esc_html_e('Round trip', 'walabu-travel'); ?></button>
+                                <button class="booking-widget__trip-button <?php echo 'one_way' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="one_way"><?php esc_html_e('One way', 'walabu-travel'); ?></button>
+                                <button class="booking-widget__trip-button <?php echo 'multi_city' === $values['trip_type'] ? 'is-active' : ''; ?>" type="button" data-trip-type="multi_city"><?php esc_html_e('Multi-city', 'walabu-travel'); ?></button>
+                            </div>
 
-                        <div class="booking-widget__utility-row">
-                            <label class="booking-widget__utility" for="walabu-cabin-class">
-                                <select id="walabu-cabin-class" name="cabin_class">
-                                    <?php foreach ($cabin_classes as $value => $label) : ?>
-                                        <option value="<?php echo esc_attr($value); ?>" <?php selected($values['cabin_class'], $value); ?>>
-                                            <?php echo esc_html($label); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
+                            <div class="booking-widget__utility-row">
+                                <label class="booking-widget__utility" for="walabu-cabin-class">
+                                    <select id="walabu-cabin-class" name="cabin_class">
+                                        <?php foreach ($cabin_classes as $value => $label) : ?>
+                                            <option value="<?php echo esc_attr($value); ?>" <?php selected($values['cabin_class'], $value); ?>>
+                                                <?php echo esc_html($label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
 
-                            <label class="booking-widget__utility" for="walabu-max-connections">
-                                <select id="walabu-max-connections" name="max_connections">
-                                    <?php foreach ($max_connection_options as $value => $label) : ?>
-                                        <option value="<?php echo esc_attr((string) $value); ?>" <?php selected((string) $values['max_connections'], (string) $value); ?>>
-                                            <?php echo esc_html($label); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
+                                <label class="booking-widget__utility" for="walabu-max-connections">
+                                    <select id="walabu-max-connections" name="max_connections">
+                                        <?php foreach ($max_connection_options as $value => $label) : ?>
+                                            <option value="<?php echo esc_attr((string) $value); ?>" <?php selected((string) $values['max_connections'], (string) $value); ?>>
+                                                <?php echo esc_html($label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
 
-                            <label class="booking-widget__utility booking-widget__utility--input" for="walabu-fare-type">
-                                <input id="walabu-fare-type" type="text" name="fare_type" value="<?php echo esc_attr($values['fare_type']); ?>" placeholder="<?php esc_attr_e('Private fare type', 'walabu-travel'); ?>">
-                            </label>
+                                <label class="booking-widget__utility booking-widget__utility--input" for="walabu-fare-type">
+                                    <input id="walabu-fare-type" type="text" name="fare_type" value="<?php echo esc_attr($values['fare_type']); ?>" placeholder="<?php esc_attr_e('Private fare type', 'walabu-travel'); ?>">
+                                </label>
 
-                            <label class="booking-widget__bundle" for="walabu-bundle-hotel">
-                                <input id="walabu-bundle-hotel" type="checkbox" value="1">
-                                <span><?php esc_html_e('Bundle with a hotel', 'walabu-travel'); ?></span>
-                            </label>
+                                <label class="booking-widget__bundle" for="walabu-bundle-hotel">
+                                    <input id="walabu-bundle-hotel" type="checkbox" value="1" <?php checked('flight_hotel' === ($values['service_type'] ?? 'flight')); ?> data-bundle-hotel-toggle>
+                                    <span><?php esc_html_e('Bundle with a hotel', 'walabu-travel'); ?></span>
+                                </label>
+                            </div>
                         </div>
-                    </div>
+                    <?php endif; ?>
 
                     <input type="hidden" name="trip_type" value="<?php echo esc_attr($values['trip_type']); ?>" data-trip-type-input>
                     <input type="hidden" name="walabu_flight_search_submit" value="1">
 
                     <div class="booking-widget__grid">
-                        <label class="booking-field booking-field--autocomplete" for="walabu-origin-label">
+                        <label class="booking-field booking-field--autocomplete <?php echo $is_hero_variant ? 'booking-field--hero-place' : ''; ?>" for="walabu-origin-label">
                             <span class="booking-field__icon"><?php echo walabu_duffel_booking_icon('plane'); ?></span>
                             <span class="booking-field__meta">
                                 <span class="booking-field__label"><?php esc_html_e('Leaving from', 'walabu-travel'); ?></span>
                                 <input id="walabu-origin-label" type="text" name="origin_label" value="<?php echo esc_attr($values['origin_label'] ?: $values['origin']); ?>" placeholder="City or airport" autocomplete="off" data-place-input="origin" required>
                                 <input id="walabu-origin" type="hidden" name="origin" value="<?php echo esc_attr($values['origin']); ?>" data-place-code="origin">
+                                <?php if ($is_hero_variant) : ?>
+                                    <button type="button" class="booking-field__clear" data-clear-place="origin" aria-label="<?php esc_attr_e('Clear origin', 'walabu-travel'); ?>">&times;</button>
+                                <?php endif; ?>
                                 <button type="button" class="booking-field__nearby-button" data-nearby-button="origin"><?php esc_html_e('Nearby airports', 'walabu-travel'); ?></button>
                                 <div class="booking-field__suggestions" data-suggestions="origin" hidden></div>
                             </span>
@@ -3125,12 +4359,15 @@ function walabu_duffel_booking_form($atts = array()) {
                             <?php echo walabu_duffel_booking_icon('swap'); ?>
                         </button>
 
-                        <label class="booking-field booking-field--autocomplete" for="walabu-destination-label">
+                        <label class="booking-field booking-field--autocomplete <?php echo $is_hero_variant ? 'booking-field--hero-place' : ''; ?>" for="walabu-destination-label">
                             <span class="booking-field__icon"><?php echo walabu_duffel_booking_icon('plane'); ?></span>
                             <span class="booking-field__meta">
                                 <span class="booking-field__label"><?php esc_html_e('Going to', 'walabu-travel'); ?></span>
                                 <input id="walabu-destination-label" type="text" name="destination_label" value="<?php echo esc_attr($values['destination_label'] ?: $values['destination']); ?>" placeholder="City or airport" autocomplete="off" data-place-input="destination" required>
                                 <input id="walabu-destination" type="hidden" name="destination" value="<?php echo esc_attr($values['destination']); ?>" data-place-code="destination">
+                                <?php if ($is_hero_variant) : ?>
+                                    <button type="button" class="booking-field__clear" data-clear-place="destination" aria-label="<?php esc_attr_e('Clear destination', 'walabu-travel'); ?>">&times;</button>
+                                <?php endif; ?>
                                 <button type="button" class="booking-field__nearby-button" data-nearby-button="destination"><?php esc_html_e('Nearby airports', 'walabu-travel'); ?></button>
                                 <div class="booking-field__suggestions" data-suggestions="destination" hidden></div>
                             </span>
@@ -3139,15 +4376,49 @@ function walabu_duffel_booking_form($atts = array()) {
                         <div class="booking-field booking-field--dates booking-field--date-range">
                             <span class="booking-field__icon"><?php echo walabu_duffel_booking_icon('calendar'); ?></span>
                             <div class="booking-field__date-split">
-                                <label class="booking-field__date-item" for="walabu-departure-date">
-                                    <span class="booking-field__label"><?php esc_html_e('Departing', 'walabu-travel'); ?></span>
-                                    <input id="walabu-departure-date" type="date" name="departure_date" min="<?php echo esc_attr(wp_date('Y-m-d')); ?>" value="<?php echo esc_attr($values['departure_date']); ?>" required>
-                                </label>
+                                <button
+                                    type="button"
+                                    class="booking-field__date-item booking-field__date-item--trigger"
+                                    data-date-trigger="departure"
+                                    aria-haspopup="dialog"
+                                    aria-expanded="false"
+                                >
+                                    <span class="booking-field__label"><?php echo $is_hero_variant ? esc_html__('Date', 'walabu-travel') : esc_html__('Departing', 'walabu-travel'); ?></span>
+                                    <span class="booking-field__date-value" data-date-display="departure">
+                                        <?php echo esc_html(!empty($values['departure_date']) ? wp_date('D, M d', strtotime($values['departure_date'])) : __('Select a date', 'walabu-travel')); ?>
+                                    </span>
+                                </button>
                                 <div class="booking-field__date-divider <?php echo 'one_way' === $values['trip_type'] ? 'is-hidden' : ''; ?>" aria-hidden="true" data-return-divider>&#8594;</div>
-                                <label class="booking-field__date-item <?php echo 'one_way' === $values['trip_type'] ? 'is-hidden' : ''; ?>" for="walabu-return-date" data-return-wrap>
+                                <button
+                                    type="button"
+                                    class="booking-field__date-item booking-field__date-item--trigger <?php echo 'one_way' === $values['trip_type'] ? 'is-hidden' : ''; ?>"
+                                    data-date-trigger="return"
+                                    aria-haspopup="dialog"
+                                    aria-expanded="false"
+                                    data-return-wrap
+                                >
                                     <span class="booking-field__label" data-return-label><?php echo 'multi_city' === $values['trip_type'] ? esc_html__('Second leg date', 'walabu-travel') : esc_html__('Returning', 'walabu-travel'); ?></span>
-                                    <input id="walabu-return-date" type="date" name="return_date" min="<?php echo esc_attr($values['departure_date']); ?>" value="<?php echo esc_attr($values['return_date']); ?>" <?php echo 'one_way' === $values['trip_type'] ? 'disabled' : ''; ?> <?php echo 'one_way' === $values['trip_type'] ? '' : 'required'; ?> data-return-date-input>
-                                </label>
+                                    <span class="booking-field__date-value" data-date-display="return">
+                                        <?php echo esc_html(!empty($values['return_date']) ? wp_date('D, M d', strtotime($values['return_date'])) : __('Select a date', 'walabu-travel')); ?>
+                                    </span>
+                                </button>
+                            </div>
+                            <input type="hidden" id="walabu-departure-date" name="departure_date" value="<?php echo esc_attr($values['departure_date']); ?>" data-date-input="departure" required>
+                            <input type="hidden" id="walabu-return-date" name="return_date" value="<?php echo esc_attr($values['return_date']); ?>" data-date-input="return" <?php echo 'one_way' === $values['trip_type'] ? 'disabled' : ''; ?> <?php echo 'one_way' === $values['trip_type'] ? '' : 'required'; ?> data-return-date-input>
+                            <div class="booking-date-picker" data-date-picker hidden role="dialog" aria-modal="false" aria-label="<?php esc_attr_e('Choose travel dates', 'walabu-travel'); ?>">
+                                <div class="booking-date-picker__chrome">
+                                    <button type="button" class="booking-date-picker__nav" data-date-prev aria-label="<?php esc_attr_e('Previous month', 'walabu-travel'); ?>">
+                                        <span aria-hidden="true">‹</span>
+                                    </button>
+                                    <div class="booking-date-picker__months" data-date-months></div>
+                                    <button type="button" class="booking-date-picker__nav" data-date-next aria-label="<?php esc_attr_e('Next month', 'walabu-travel'); ?>">
+                                        <span aria-hidden="true">›</span>
+                                    </button>
+                                </div>
+                                <div class="booking-date-picker__footer">
+                                    <button type="button" class="booking-date-picker__action booking-date-picker__action--clear" data-date-clear><?php esc_html_e('Clear', 'walabu-travel'); ?></button>
+                                    <button type="button" class="booking-date-picker__action booking-date-picker__action--done" data-date-done><?php esc_html_e('Done', 'walabu-travel'); ?></button>
+                                </div>
                             </div>
                         </div>
 
@@ -3155,18 +4426,82 @@ function walabu_duffel_booking_form($atts = array()) {
                             <span class="booking-field__icon"><?php echo walabu_duffel_booking_icon('users'); ?></span>
                             <span class="booking-field__meta">
                                 <span class="booking-field__label"><?php esc_html_e('Passenger(s)', 'walabu-travel'); ?></span>
-                                <select id="walabu-passengers" name="passengers">
-                                    <?php for ($i = 1; $i <= 9; $i++) : ?>
-                                        <option value="<?php echo esc_attr((string) $i); ?>" <?php selected((int) $values['passengers'], $i); ?>>
-                                            <?php echo esc_html(sprintf(_n('%d Adult', '%d Adults', $i, 'walabu-travel'), $i)); ?>
-                                        </option>
-                                    <?php endfor; ?>
-                                </select>
+                                <button
+                                    id="walabu-passengers"
+                                    class="booking-field__trigger"
+                                    type="button"
+                                    data-passenger-trigger
+                                    aria-expanded="false"
+                                    aria-controls="<?php echo esc_attr($passenger_panel_id); ?>"
+                                >
+                                    <span data-passenger-summary><?php echo esc_html($passenger_summary); ?></span>
+                                </button>
+                                <input type="hidden" name="passengers" value="<?php echo esc_attr((string) ($values['passengers'] ?? walabu_duffel_booking_total_passengers($values))); ?>" data-passenger-total-input>
+                                <input type="hidden" name="adult_count" value="<?php echo esc_attr((string) ($values['adult_count'] ?? 1)); ?>" data-passenger-count-input="adult">
+                                <input type="hidden" name="child_count" value="<?php echo esc_attr((string) ($values['child_count'] ?? 0)); ?>" data-passenger-count-input="child">
+                                <input type="hidden" name="child_ages" value="<?php echo esc_attr(walabu_duffel_booking_serialize_age_list($values['child_ages'] ?? array())); ?>" data-passenger-ages-input="child">
+                                <input type="hidden" name="infant_lap_count" value="<?php echo esc_attr((string) ($values['infant_lap_count'] ?? 0)); ?>" data-passenger-count-input="infant_lap">
+                                <input type="hidden" name="infant_lap_ages" value="<?php echo esc_attr(walabu_duffel_booking_serialize_age_list($values['infant_lap_ages'] ?? array())); ?>" data-passenger-ages-input="infant_lap">
+                                <input type="hidden" name="infant_seat_count" value="<?php echo esc_attr((string) ($values['infant_seat_count'] ?? 0)); ?>" data-passenger-count-input="infant_seat">
+                                <input type="hidden" name="infant_seat_ages" value="<?php echo esc_attr(walabu_duffel_booking_serialize_age_list($values['infant_seat_ages'] ?? array())); ?>" data-passenger-ages-input="infant_seat">
+                                <div class="booking-passenger-panel" id="<?php echo esc_attr($passenger_panel_id); ?>" data-passenger-panel hidden>
+                                    <div class="booking-passenger-panel__row" data-passenger-category="adult">
+                                        <div class="booking-passenger-panel__copy">
+                                            <strong><?php esc_html_e('Adult', 'walabu-travel'); ?></strong>
+                                            <span><?php esc_html_e('(12+)', 'walabu-travel'); ?></span>
+                                        </div>
+                                        <div class="booking-passenger-panel__stepper">
+                                            <button type="button" data-passenger-step="adult" data-step="-1" aria-label="<?php esc_attr_e('Decrease adults', 'walabu-travel'); ?>">−</button>
+                                            <span data-passenger-count-display="adult"><?php echo esc_html((string) ($values['adult_count'] ?? 1)); ?></span>
+                                            <button type="button" data-passenger-step="adult" data-step="1" aria-label="<?php esc_attr_e('Increase adults', 'walabu-travel'); ?>">+</button>
+                                        </div>
+                                    </div>
+                                    <div class="booking-passenger-panel__row" data-passenger-category="child">
+                                        <div class="booking-passenger-panel__copy">
+                                            <strong><?php esc_html_e('Child', 'walabu-travel'); ?></strong>
+                                            <span><?php esc_html_e('(2-11)', 'walabu-travel'); ?></span>
+                                        </div>
+                                        <div class="booking-passenger-panel__stepper">
+                                            <button type="button" data-passenger-step="child" data-step="-1" aria-label="<?php esc_attr_e('Decrease children', 'walabu-travel'); ?>">−</button>
+                                            <span data-passenger-count-display="child"><?php echo esc_html((string) ($values['child_count'] ?? 0)); ?></span>
+                                            <button type="button" data-passenger-step="child" data-step="1" aria-label="<?php esc_attr_e('Increase children', 'walabu-travel'); ?>">+</button>
+                                        </div>
+                                    </div>
+                                    <div class="booking-passenger-panel__ages" data-passenger-age-list="child"></div>
+                                    <div class="booking-passenger-panel__row" data-passenger-category="infant_seat">
+                                        <div class="booking-passenger-panel__copy">
+                                            <strong><?php esc_html_e('Infant on seat', 'walabu-travel'); ?></strong>
+                                            <span><?php esc_html_e('(under 2)', 'walabu-travel'); ?></span>
+                                        </div>
+                                        <div class="booking-passenger-panel__stepper">
+                                            <button type="button" data-passenger-step="infant_seat" data-step="-1" aria-label="<?php esc_attr_e('Decrease infants with seat', 'walabu-travel'); ?>">−</button>
+                                            <span data-passenger-count-display="infant_seat"><?php echo esc_html((string) ($values['infant_seat_count'] ?? 0)); ?></span>
+                                            <button type="button" data-passenger-step="infant_seat" data-step="1" aria-label="<?php esc_attr_e('Increase infants with seat', 'walabu-travel'); ?>">+</button>
+                                        </div>
+                                    </div>
+                                    <div class="booking-passenger-panel__ages" data-passenger-age-list="infant_seat"></div>
+                                    <div class="booking-passenger-panel__row" data-passenger-category="infant_lap">
+                                        <div class="booking-passenger-panel__copy">
+                                            <strong><?php esc_html_e('Infant on lap', 'walabu-travel'); ?></strong>
+                                            <span><?php esc_html_e('(under 2)', 'walabu-travel'); ?></span>
+                                        </div>
+                                        <div class="booking-passenger-panel__stepper">
+                                            <button type="button" data-passenger-step="infant_lap" data-step="-1" aria-label="<?php esc_attr_e('Decrease infants on lap', 'walabu-travel'); ?>">−</button>
+                                            <span data-passenger-count-display="infant_lap"><?php echo esc_html((string) ($values['infant_lap_count'] ?? 0)); ?></span>
+                                            <button type="button" data-passenger-step="infant_lap" data-step="1" aria-label="<?php esc_attr_e('Increase infants on lap', 'walabu-travel'); ?>">+</button>
+                                        </div>
+                                    </div>
+                                    <div class="booking-passenger-panel__ages" data-passenger-age-list="infant_lap"></div>
+                                    <p class="booking-passenger-panel__note"><?php esc_html_e('Each infant on lap must travel with a unique adult. Infants on seat are searched as seated child passengers in Duffel.', 'walabu-travel'); ?></p>
+                                </div>
                             </span>
                         </label>
 
                         <button class="booking-widget__submit" type="submit">
-                            <?php esc_html_e('Search', 'walabu-travel'); ?>
+                            <?php if ($is_hero_variant) : ?>
+                                <span class="booking-widget__submit-icon"><?php echo walabu_duffel_booking_icon('search'); ?></span>
+                            <?php endif; ?>
+                            <span><?php esc_html_e('Search', 'walabu-travel'); ?></span>
                         </button>
                     </div>
 
@@ -3179,7 +4514,11 @@ function walabu_duffel_booking_form($atts = array()) {
             </div>
         </div>
 
-        <?php echo walabu_duffel_booking_render_results($search_result['offers'], $values); ?>
+        <?php
+        if (!$should_hide_results) {
+            echo walabu_duffel_booking_render_results($search_result['offers'], $values);
+        }
+        ?>
     </div>
     <?php
     return ob_get_clean();

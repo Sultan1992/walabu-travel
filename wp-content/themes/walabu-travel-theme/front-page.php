@@ -31,42 +31,6 @@ $recent_searches = array(
 <main class="travel-home">
     <section class="hero">
         <div class="walabu-container hero__layout">
-            <div class="hero__copy">
-                <div class="hero__brand-chip">
-                    <?php echo walabu_travel_get_brand_logo_markup('hero'); ?>
-                    <span class="hero__brand-copy">
-                        <strong><?php esc_html_e('Travel. Explore. Connect.', 'walabu-travel'); ?></strong>
-                        <span><?php esc_html_e('Your journey, our passion.', 'walabu-travel'); ?></span>
-                    </span>
-                </div>
-                <span class="hero__eyebrow">Global routes with Walabu precision</span>
-                <h1 class="hero__title">Book international trips with a travel brand built around connection.</h1>
-                <p class="hero__text">
-                    Walabu Travel is designed for long-haul family visits, reunion trips, and cross-continental planning with clearer search, better bundling, and concierge-style support.
-                </p>
-
-                <div class="hero__metrics">
-                    <div class="hero__metric">
-                        <strong>400+</strong>
-                        <span>airlines ready to compare</span>
-                    </div>
-                    <div class="hero__metric">
-                        <strong>24/7</strong>
-                        <span>support for booking changes</span>
-                    </div>
-                    <div class="hero__metric">
-                        <strong>1 place</strong>
-                        <span>for flights, hotels, and trip notes</span>
-                    </div>
-                </div>
-
-                <div class="hero__route-strip">
-                    <span class="hero__route-pill">MSP to ADD</span>
-                    <span class="hero__route-pill">ORD to DXB</span>
-                    <span class="hero__route-pill">IAH to LOS</span>
-                </div>
-            </div>
-
             <div class="hero__search">
                 <?php echo walabu_travel_render_flight_search('hero'); ?>
             </div>

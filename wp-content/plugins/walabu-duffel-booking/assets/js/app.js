@@ -28,12 +28,6 @@ document.addEventListener("DOMContentLoaded", () => {
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
 
-  const normalizePlaceText = (value) =>
-    String(value || "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
-
   const updateUrlParameter = (name, value) => {
     const url = new URL(window.location.href);
 
@@ -47,14 +41,22 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   forms.forEach((form) => {
+    const bookingWidget = form.closest(".booking-widget");
     const originLabelInput = form.querySelector('[data-place-input="origin"]');
     const originCodeInput = form.querySelector('[data-place-code="origin"]');
     const originSuggestions = form.querySelector('[data-suggestions="origin"]');
     const originNearbyButton = form.querySelector('[data-nearby-button="origin"]');
+    const originClearButton = form.querySelector('[data-clear-place="origin"]');
     const destinationLabelInput = form.querySelector('[data-place-input="destination"]');
     const destinationCodeInput = form.querySelector('[data-place-code="destination"]');
     const destinationSuggestions = form.querySelector('[data-suggestions="destination"]');
     const destinationNearbyButton = form.querySelector('[data-nearby-button="destination"]');
+    const destinationClearButton = form.querySelector('[data-clear-place="destination"]');
+    const serviceTypeInput = form.querySelector("[data-service-type-input]");
+    const serviceButtons = bookingWidget
+      ? Array.from(bookingWidget.querySelectorAll(".booking-widget__service-tab[data-service-type]"))
+      : [];
+    const bundleHotelToggle = form.querySelector("[data-bundle-hotel-toggle]");
     const swapButton = form.querySelector(".booking-widget__swap");
     const tripTypeInput = form.querySelector("[data-trip-type-input]");
     const tripButtons = Array.from(form.querySelectorAll("[data-trip-type]"));
@@ -63,11 +65,336 @@ document.addEventListener("DOMContentLoaded", () => {
     const returnLabel = form.querySelector("[data-return-label]");
     const returnWrap = form.querySelector("[data-return-wrap]");
     const returnDivider = form.querySelector("[data-return-divider]");
+    const datePicker = form.querySelector("[data-date-picker]");
+    const dateMonthContainer = form.querySelector("[data-date-months]");
+    const datePrevButton = form.querySelector("[data-date-prev]");
+    const dateNextButton = form.querySelector("[data-date-next]");
+    const dateClearButton = form.querySelector("[data-date-clear]");
+    const dateDoneButton = form.querySelector("[data-date-done]");
+    const dateTriggers = {
+      departure: form.querySelector('[data-date-trigger="departure"]'),
+      return: form.querySelector('[data-date-trigger="return"]'),
+    };
+    const dateDisplays = {
+      departure: form.querySelector('[data-date-display="departure"]'),
+      return: form.querySelector('[data-date-display="return"]'),
+    };
+    const passengerTrigger = form.querySelector("[data-passenger-trigger]");
+    const passengerSummary = form.querySelector("[data-passenger-summary]");
+    const passengerPanel = form.querySelector("[data-passenger-panel]");
+    const passengerTotalInput = form.querySelector("[data-passenger-total-input]");
+    const passengerStepButtons = Array.from(form.querySelectorAll("[data-passenger-step]"));
+    const passengerCountInputs = Array.from(form.querySelectorAll("[data-passenger-count-input]")).reduce(
+      (accumulator, input) => {
+        accumulator[input.dataset.passengerCountInput] = input;
+        return accumulator;
+      },
+      {}
+    );
+    const passengerAgeInputs = Array.from(form.querySelectorAll("[data-passenger-ages-input]")).reduce(
+      (accumulator, input) => {
+        accumulator[input.dataset.passengerAgesInput] = input;
+        return accumulator;
+      },
+      {}
+    );
+    const passengerCountDisplays = Array.from(
+      form.querySelectorAll("[data-passenger-count-display]")
+    ).reduce((accumulator, display) => {
+      accumulator[display.dataset.passengerCountDisplay] = display;
+      return accumulator;
+    }, {});
+    const passengerAgeLists = Array.from(form.querySelectorAll("[data-passenger-age-list]")).reduce(
+      (accumulator, container) => {
+        accumulator[container.dataset.passengerAgeList] = container;
+        return accumulator;
+      },
+      {}
+    );
     const autocompleteState = new WeakMap();
     const requestState = new WeakMap();
     const selectedPlaceState = {
       origin: null,
       destination: null,
+    };
+    const passengerCategoryMeta = {
+      adult: {
+        min: 1,
+        labelSingular: "Adult",
+        labelPlural: "Adults",
+        ageLabel: "Adult",
+      },
+      child: {
+        min: 0,
+        labelSingular: "Child",
+        labelPlural: "Children",
+        ageMin: 2,
+        ageMax: 11,
+        defaultAge: 6,
+        ageLabel: "Child",
+      },
+      infant_lap: {
+        min: 0,
+        labelSingular: "Infant on lap",
+        labelPlural: "Infants on lap",
+        ageMin: 0,
+        ageMax: 1,
+        defaultAge: 0,
+        ageLabel: "Infant on lap",
+      },
+      infant_seat: {
+        min: 0,
+        labelSingular: "Infant on seat",
+        labelPlural: "Infants on seat",
+        ageMin: 0,
+        ageMax: 1,
+        defaultAge: 0,
+        ageLabel: "Infant on seat",
+      },
+    };
+    const passengerState = {
+      adult: 1,
+      child: 0,
+      infant_lap: 0,
+      infant_seat: 0,
+      child_ages: [],
+      infant_lap_ages: [],
+      infant_seat_ages: [],
+    };
+
+    const parseCount = (value, fallback = 0) => {
+      const nextValue = Number.parseInt(value, 10);
+      return Number.isFinite(nextValue) ? nextValue : fallback;
+    };
+
+    const getPassengerAgeStateKey = (category) => `${category}_ages`;
+
+    const normalizePassengerAges = (category, count) => {
+      const meta = passengerCategoryMeta[category];
+      const stateKey = getPassengerAgeStateKey(category);
+
+      if (!meta || !stateKey) {
+        return;
+      }
+
+      const nextAges = Array.isArray(passengerState[stateKey]) ? passengerState[stateKey].slice(0, count) : [];
+
+      while (nextAges.length < count) {
+        nextAges.push(meta.defaultAge);
+      }
+
+      passengerState[stateKey] = nextAges.map((age) => {
+        const parsedAge = parseCount(age, meta.defaultAge);
+        return Math.min(meta.ageMax, Math.max(meta.ageMin, parsedAge));
+      });
+    };
+
+    const getPassengerTotal = () =>
+      passengerState.adult +
+      passengerState.child +
+      passengerState.infant_lap +
+      passengerState.infant_seat;
+
+    const syncPassengerSummary = () => {
+      if (!passengerSummary) {
+        return;
+      }
+
+      const parts = Object.keys(passengerCategoryMeta)
+        .map((category) => {
+          const count = passengerState[category];
+          const meta = passengerCategoryMeta[category];
+
+          if (!count) {
+            return "";
+          }
+
+          const label = count === 1 ? meta.labelSingular : meta.labelPlural;
+          return `${count} ${label}`;
+        })
+        .filter(Boolean);
+
+      passengerSummary.textContent = parts.length > 0 ? parts.join(", ") : "1 Adult";
+    };
+
+    const syncPassengerStepButtons = () => {
+      const total = getPassengerTotal();
+
+      passengerStepButtons.forEach((button) => {
+        const category = button.getAttribute("data-passenger-step") || "";
+        const delta = Number.parseInt(button.getAttribute("data-step") || "0", 10);
+        const count = passengerState[category] || 0;
+        const meta = passengerCategoryMeta[category];
+        let disabled = false;
+
+        if (!meta || delta === 0) {
+          return;
+        }
+
+        if (delta < 0) {
+          const nextCount = count - 1;
+          disabled = nextCount < meta.min;
+
+          if (category === "adult" && nextCount < passengerState.infant_lap) {
+            disabled = true;
+          }
+        } else {
+          disabled = total >= 9;
+
+          if (category === "infant_lap" && passengerState.infant_lap >= passengerState.adult) {
+            disabled = true;
+          }
+        }
+
+        button.disabled = disabled;
+        button.setAttribute("aria-disabled", disabled ? "true" : "false");
+      });
+    };
+
+    const renderPassengerAgeFields = (category) => {
+      const container = passengerAgeLists[category];
+      const meta = passengerCategoryMeta[category];
+      const stateKey = getPassengerAgeStateKey(category);
+      const ages = stateKey ? passengerState[stateKey] || [] : [];
+
+      if (!container || !meta || !stateKey) {
+        return;
+      }
+
+      container.hidden = ages.length === 0;
+      container.innerHTML = "";
+
+      ages.forEach((age, index) => {
+        const row = document.createElement("label");
+        const label = document.createElement("span");
+        const select = document.createElement("select");
+
+        row.className = "booking-passenger-panel__age";
+        label.className = "booking-passenger-panel__age-label";
+        label.textContent = `${meta.ageLabel} ${index + 1} age`;
+
+        select.className = "booking-passenger-panel__age-select";
+        select.setAttribute("aria-label", `${meta.ageLabel} ${index + 1} age`);
+
+        for (let ageValue = meta.ageMin; ageValue <= meta.ageMax; ageValue += 1) {
+          const option = document.createElement("option");
+          option.value = String(ageValue);
+          option.textContent = ageValue === 0 ? "Under 1" : `${ageValue} year${ageValue === 1 ? "" : "s"}`;
+
+          if (ageValue === age) {
+            option.selected = true;
+          }
+
+          select.append(option);
+        }
+
+        select.addEventListener("change", () => {
+          passengerState[stateKey][index] = parseCount(select.value, meta.defaultAge);
+          syncPassengerState();
+        });
+
+        row.append(label, select);
+        container.append(row);
+      });
+    };
+
+    const normalizePassengerState = () => {
+      passengerState.adult = Math.max(1, parseCount(passengerState.adult, 1));
+      passengerState.child = Math.max(0, parseCount(passengerState.child, 0));
+      passengerState.infant_lap = Math.max(0, parseCount(passengerState.infant_lap, 0));
+      passengerState.infant_seat = Math.max(0, parseCount(passengerState.infant_seat, 0));
+
+      if (passengerState.infant_lap > passengerState.adult) {
+        passengerState.infant_lap = passengerState.adult;
+      }
+
+      let overflow = getPassengerTotal() - 9;
+
+      if (overflow > 0) {
+        ["infant_seat", "infant_lap", "child", "adult"].forEach((category) => {
+          if (overflow <= 0) {
+            return;
+          }
+
+          const removable = Math.max(0, passengerState[category] - passengerCategoryMeta[category].min);
+
+          if (removable <= 0) {
+            return;
+          }
+
+          const reduction = Math.min(removable, overflow);
+          passengerState[category] -= reduction;
+          overflow -= reduction;
+        });
+      }
+
+      if (passengerState.infant_lap > passengerState.adult) {
+        passengerState.infant_lap = passengerState.adult;
+      }
+
+      normalizePassengerAges("child", passengerState.child);
+      normalizePassengerAges("infant_lap", passengerState.infant_lap);
+      normalizePassengerAges("infant_seat", passengerState.infant_seat);
+    };
+
+    const syncPassengerState = () => {
+      normalizePassengerState();
+
+      if (passengerTotalInput) {
+        passengerTotalInput.value = String(getPassengerTotal());
+      }
+
+      Object.keys(passengerCountInputs).forEach((category) => {
+        passengerCountInputs[category].value = String(passengerState[category] || 0);
+      });
+
+      Object.keys(passengerAgeInputs).forEach((category) => {
+        const stateKey = getPassengerAgeStateKey(category);
+        passengerAgeInputs[category].value = stateKey
+          ? (passengerState[stateKey] || []).join(",")
+          : "";
+      });
+
+      Object.keys(passengerCountDisplays).forEach((category) => {
+        passengerCountDisplays[category].textContent = String(passengerState[category] || 0);
+      });
+
+      syncPassengerSummary();
+      syncPassengerStepButtons();
+      renderPassengerAgeFields("child");
+      renderPassengerAgeFields("infant_lap");
+      renderPassengerAgeFields("infant_seat");
+    };
+
+    const closePassengerPanel = () => {
+      if (!passengerPanel || !passengerTrigger) {
+        return;
+      }
+
+      passengerPanel.hidden = true;
+      passengerTrigger.setAttribute("aria-expanded", "false");
+    };
+
+    const openPassengerPanel = () => {
+      if (!passengerPanel || !passengerTrigger) {
+        return;
+      }
+
+      passengerPanel.hidden = false;
+      passengerTrigger.setAttribute("aria-expanded", "true");
+    };
+
+    const togglePassengerPanel = () => {
+      if (!passengerPanel || !passengerTrigger) {
+        return;
+      }
+
+      if (passengerPanel.hidden) {
+        openPassengerPanel();
+        return;
+      }
+
+      closePassengerPanel();
     };
 
     const getRequestMeta = (container) =>
@@ -130,17 +457,27 @@ document.addEventListener("DOMContentLoaded", () => {
         returnWrap.classList.toggle("is-hidden", !needsReturnDate);
       }
 
+      if (dateTriggers.return) {
+        dateTriggers.return.hidden = !needsReturnDate;
+      }
+
       if (returnDivider) {
         returnDivider.classList.toggle("is-hidden", !needsReturnDate);
       }
 
       if (!needsReturnDate) {
         returnDateInput.value = "";
+        if (dateState.activeField === "return" && datePicker) {
+          dateState.activeField = "departure";
+          closeDatePicker();
+        }
       }
 
       if (returnLabel) {
         returnLabel.textContent = tripType === "multi_city" ? "Second leg date" : "Returning";
       }
+
+      syncDateTriggerLabels();
     };
 
     const syncTripButtons = () => {
@@ -155,6 +492,514 @@ document.addEventListener("DOMContentLoaded", () => {
 
       syncReturnDateState();
     };
+
+    const syncServiceButtons = () => {
+      if (!serviceTypeInput || serviceButtons.length === 0) {
+        return;
+      }
+
+      serviceButtons.forEach((button) => {
+        const isActive = button.getAttribute("data-service-type") === serviceTypeInput.value;
+        button.classList.toggle("is-active", isActive);
+      });
+
+      if (bundleHotelToggle) {
+        bundleHotelToggle.checked = serviceTypeInput.value === "flight_hotel";
+      }
+    };
+
+    const dateInputs = {
+      departure: departureDateInput,
+      return: returnDateInput,
+    };
+    const dateState = {
+      activeField: "departure",
+      viewMonth: null,
+      open: false,
+    };
+    const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    const createUtcDate = (year, monthIndex, day) =>
+      new Date(Date.UTC(year, monthIndex, day, 12, 0, 0, 0));
+
+    const parseIsoDate = (value) => {
+      const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+      if (!match) {
+        return null;
+      }
+
+      const year = Number.parseInt(match[1], 10);
+      const month = Number.parseInt(match[2], 10);
+      const day = Number.parseInt(match[3], 10);
+
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return null;
+      }
+
+      return createUtcDate(year, month - 1, day);
+    };
+
+    const formatIsoDate = (date) => {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+      }
+
+      return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const formatDisplayDate = (value) => {
+      const date = parseIsoDate(value);
+
+      if (!date) {
+        return "";
+      }
+
+      return new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "2-digit",
+      }).format(date);
+    };
+
+    const startOfMonth = (date) =>
+      createUtcDate(date.getUTCFullYear(), date.getUTCMonth(), 1);
+
+    const addMonths = (date, delta) =>
+      createUtcDate(date.getUTCFullYear(), date.getUTCMonth() + delta, 1);
+
+    const isSameDay = (left, right) =>
+      Boolean(left && right) &&
+      left.getUTCFullYear() === right.getUTCFullYear() &&
+      left.getUTCMonth() === right.getUTCMonth() &&
+      left.getUTCDate() === right.getUTCDate();
+
+    const isBeforeDay = (left, right) =>
+      Boolean(left && right) && left.getTime() < right.getTime();
+
+    const getTodayUtc = () => {
+      const now = new Date();
+      return createUtcDate(now.getFullYear(), now.getMonth(), now.getDate());
+    };
+
+    const getCurrentMonthStart = () => startOfMonth(getTodayUtc());
+
+    const syncDateTriggerLabels = () => {
+      if (dateDisplays.departure) {
+        dateDisplays.departure.textContent = dateInputs.departure?.value
+          ? formatDisplayDate(dateInputs.departure.value)
+          : "Select a date";
+      }
+
+      if (dateDisplays.return) {
+        dateDisplays.return.textContent = dateInputs.return?.value
+          ? formatDisplayDate(dateInputs.return.value)
+          : "Select a date";
+      }
+    };
+
+    const syncDateTriggerState = () => {
+      const tripType = tripTypeInput ? tripTypeInput.value : "one_way";
+      const needsReturnDate = tripType !== "one_way";
+
+      if (dateTriggers.departure) {
+        dateTriggers.departure.setAttribute("aria-expanded", dateState.open && dateState.activeField === "departure" ? "true" : "false");
+      }
+
+      if (dateTriggers.return) {
+        dateTriggers.return.hidden = !needsReturnDate;
+        dateTriggers.return.setAttribute("aria-expanded", dateState.open && dateState.activeField === "return" ? "true" : "false");
+      }
+
+      if (returnDivider) {
+        returnDivider.classList.toggle("is-hidden", !needsReturnDate);
+      }
+
+      if (returnWrap) {
+        returnWrap.classList.toggle("is-hidden", !needsReturnDate);
+      }
+
+      if (dateInputs.return) {
+        dateInputs.return.disabled = !needsReturnDate;
+        dateInputs.return.required = needsReturnDate;
+      }
+
+      if (!needsReturnDate && dateInputs.return) {
+        dateInputs.return.value = "";
+      }
+
+      if (returnLabel) {
+        returnLabel.textContent = tripType === "multi_city" ? "Second leg date" : "Returning";
+      }
+    };
+
+    const renderDatePickerMonth = (monthStart) => {
+      const monthTitle = new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        year: "numeric",
+      }).format(monthStart);
+      const firstDayOffset = monthStart.getUTCDay();
+      const today = getTodayUtc();
+      const currentTripType = tripTypeInput ? tripTypeInput.value : "one_way";
+      const departureDate = parseIsoDate(dateInputs.departure?.value || "");
+      const returnDate = parseIsoDate(dateInputs.return?.value || "");
+      const activeMonth = monthStart.getUTCMonth();
+      const activeYear = monthStart.getUTCFullYear();
+      const gridStart = createUtcDate(activeYear, activeMonth, 1 - firstDayOffset);
+      const cells = [];
+
+      for (let index = 0; index < 42; index += 1) {
+        const cellDate = createUtcDate(
+          gridStart.getUTCFullYear(),
+          gridStart.getUTCMonth(),
+          gridStart.getUTCDate() + index
+        );
+        const inMonth = cellDate.getUTCMonth() === activeMonth;
+        const isoValue = formatIsoDate(cellDate);
+        const isDisabled = isBeforeDay(cellDate, today);
+        const isDeparture = departureDate && isSameDay(cellDate, departureDate);
+        const isReturn = returnDate && isSameDay(cellDate, returnDate);
+        const isRange =
+          departureDate &&
+          returnDate &&
+          isBeforeDay(departureDate, cellDate) &&
+          isBeforeDay(cellDate, returnDate);
+
+        cells.push(`
+          <button
+            type="button"
+            class="booking-date-picker__day ${inMonth ? "" : "is-outside"} ${isDeparture ? "is-selected is-range-start" : ""} ${isReturn ? "is-selected is-range-end" : ""} ${isRange ? "is-range" : ""} ${isDisabled ? "is-disabled" : ""}"
+            data-date-value="${isoValue}"
+            ${isDisabled ? "disabled" : ""}
+            aria-pressed="${isDeparture || isReturn ? "true" : "false"}"
+          >
+            <span>${cellDate.getUTCDate()}</span>
+          </button>
+        `);
+      }
+
+      return `
+        <section class="booking-date-picker__month" data-month="${activeYear}-${String(activeMonth + 1).padStart(2, "0")}">
+          <h3 class="booking-date-picker__title">${escapeHtml(monthTitle)}</h3>
+          <div class="booking-date-picker__weekdays">
+            ${weekdayLabels.map((label) => `<span>${label}</span>`).join("")}
+          </div>
+          <div class="booking-date-picker__grid ${currentTripType !== "one_way" && departureDate && returnDate ? "has-range" : ""}">
+            ${cells.join("")}
+          </div>
+        </section>
+      `;
+    };
+
+    const renderDatePicker = () => {
+      if (!datePicker || !dateMonthContainer) {
+        return;
+      }
+
+      const today = getTodayUtc();
+      const departureDate = parseIsoDate(dateInputs.departure?.value || "");
+      const selectedDate = parseIsoDate(
+        dateState.activeField === "return" && dateInputs.return?.value
+          ? dateInputs.return.value
+          : dateInputs.departure?.value || dateInputs.return?.value || ""
+      );
+
+      if (!dateState.viewMonth) {
+        dateState.viewMonth = startOfMonth(selectedDate || departureDate || today);
+      }
+
+      if (dateState.viewMonth.getTime() < getCurrentMonthStart().getTime()) {
+        dateState.viewMonth = getCurrentMonthStart();
+      }
+
+      const nextMonth = addMonths(dateState.viewMonth, 1);
+      const canGoBack = dateState.viewMonth.getTime() > getCurrentMonthStart().getTime();
+
+      datePicker.hidden = false;
+      dateMonthContainer.innerHTML =
+        renderDatePickerMonth(dateState.viewMonth) + renderDatePickerMonth(nextMonth);
+
+      if (datePrevButton) {
+        datePrevButton.disabled = !canGoBack;
+      }
+    };
+
+    const openDatePicker = (field) => {
+      if (!datePicker) {
+        return;
+      }
+
+      dateState.open = true;
+      dateState.activeField = field === "return" ? "return" : "departure";
+      dateState.viewMonth = startOfMonth(
+        parseIsoDate(
+          dateState.activeField === "return" && dateInputs.return?.value
+            ? dateInputs.return.value
+            : dateInputs.departure?.value || dateInputs.return?.value || ""
+        ) || getTodayUtc()
+      );
+      syncDateTriggerState();
+      renderDatePicker();
+    };
+
+    const closeDatePicker = () => {
+      if (!datePicker) {
+        return;
+      }
+
+      dateState.open = false;
+      datePicker.hidden = true;
+      if (dateTriggers.departure) {
+        dateTriggers.departure.setAttribute("aria-expanded", "false");
+      }
+      if (dateTriggers.return) {
+        dateTriggers.return.setAttribute("aria-expanded", "false");
+      }
+    };
+
+    const setDateValue = (field, value) => {
+      const nextDate = parseIsoDate(value);
+
+      if (!nextDate) {
+        return;
+      }
+
+      const isoValue = formatIsoDate(nextDate);
+      const tripType = tripTypeInput ? tripTypeInput.value : "one_way";
+
+      if (field === "departure" && dateInputs.departure) {
+        dateInputs.departure.value = isoValue;
+
+        if (dateInputs.return && dateInputs.return.value) {
+          const returnDate = parseIsoDate(dateInputs.return.value);
+
+          if (returnDate && isBeforeDay(returnDate, nextDate)) {
+            dateInputs.return.value = "";
+          }
+        }
+
+        if (tripType === "one_way") {
+          closeDatePicker();
+          syncDateTriggerLabels();
+          syncDateTriggerState();
+          return;
+        }
+
+        dateState.activeField = "return";
+        dateState.viewMonth = startOfMonth(nextDate);
+        syncDateTriggerLabels();
+        syncDateTriggerState();
+        renderDatePicker();
+        return;
+      }
+
+      if (field === "return" && dateInputs.return) {
+        const departureDate = parseIsoDate(dateInputs.departure?.value || "");
+
+        if (departureDate && isBeforeDay(nextDate, departureDate)) {
+          dateInputs.departure.value = isoValue;
+          dateInputs.return.value = "";
+          dateState.activeField = "return";
+          dateState.viewMonth = startOfMonth(nextDate);
+          syncDateTriggerLabels();
+          syncDateTriggerState();
+          renderDatePicker();
+          return;
+        }
+
+        dateInputs.return.value = isoValue;
+        closeDatePicker();
+      }
+
+      syncDateTriggerLabels();
+      syncDateTriggerState();
+    };
+
+    if (datePicker) {
+      datePicker.addEventListener("click", (event) => {
+        if (event.target.closest("[data-date-clear]") || event.target.closest("[data-date-done]")) {
+          return;
+        }
+      });
+    }
+
+    if (datePrevButton) {
+      datePrevButton.addEventListener("click", () => {
+        dateState.viewMonth = addMonths(dateState.viewMonth || getCurrentMonthStart(), -1);
+
+        if (dateState.viewMonth.getTime() < getCurrentMonthStart().getTime()) {
+          dateState.viewMonth = getCurrentMonthStart();
+        }
+
+        renderDatePicker();
+      });
+    }
+
+    if (dateNextButton) {
+      dateNextButton.addEventListener("click", () => {
+        dateState.viewMonth = addMonths(dateState.viewMonth || getCurrentMonthStart(), 1);
+        renderDatePicker();
+      });
+    }
+
+    if (dateClearButton) {
+      dateClearButton.addEventListener("click", () => {
+        if (dateInputs.departure) {
+          dateInputs.departure.value = "";
+        }
+
+        if (dateInputs.return) {
+          dateInputs.return.value = "";
+        }
+
+        dateState.activeField = "departure";
+        dateState.viewMonth = getCurrentMonthStart();
+        syncDateTriggerLabels();
+        syncDateTriggerState();
+        renderDatePicker();
+      });
+    }
+
+    if (dateDoneButton) {
+      dateDoneButton.addEventListener("click", () => {
+        closeDatePicker();
+      });
+    }
+
+    Object.keys(dateTriggers).forEach((field) => {
+      const trigger = dateTriggers[field];
+
+      if (!trigger) {
+        return;
+      }
+
+      trigger.addEventListener("click", () => {
+        if (datePicker && dateState.open && dateState.activeField === field) {
+          closeDatePicker();
+          return;
+        }
+
+        openDatePicker(field);
+      });
+    });
+
+    if (dateMonthContainer) {
+      dateMonthContainer.addEventListener("click", (event) => {
+        const dayButton = event.target.closest("[data-date-value]");
+
+        if (!dayButton) {
+          return;
+        }
+
+        if (dayButton.disabled) {
+          return;
+        }
+
+        const value = dayButton.getAttribute("data-date-value");
+
+        if (!value) {
+          return;
+        }
+
+        setDateValue(dateState.activeField, value);
+      });
+    }
+
+    document.addEventListener("click", (event) => {
+      if (!datePicker || datePicker.hidden) {
+        return;
+      }
+
+      if (datePicker.contains(event.target)) {
+        return;
+      }
+
+      if (
+        dateTriggers.departure?.contains(event.target) ||
+        dateTriggers.return?.contains(event.target)
+      ) {
+        return;
+      }
+
+      closeDatePicker();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && datePicker && !datePicker.hidden) {
+        closeDatePicker();
+      }
+    });
+
+    syncDateTriggerLabels();
+    syncDateTriggerState();
+
+    if (passengerTrigger && passengerPanel) {
+      passengerState.adult = parseCount(passengerCountInputs.adult ? passengerCountInputs.adult.value : 1, 1);
+      passengerState.child = parseCount(passengerCountInputs.child ? passengerCountInputs.child.value : 0, 0);
+      passengerState.infant_lap = parseCount(
+        passengerCountInputs.infant_lap ? passengerCountInputs.infant_lap.value : 0,
+        0
+      );
+      passengerState.infant_seat = parseCount(
+        passengerCountInputs.infant_seat ? passengerCountInputs.infant_seat.value : 0,
+        0
+      );
+      passengerState.child_ages = String(
+        passengerAgeInputs.child ? passengerAgeInputs.child.value : ""
+      )
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => parseCount(value, passengerCategoryMeta.child.defaultAge));
+      passengerState.infant_lap_ages = String(
+        passengerAgeInputs.infant_lap ? passengerAgeInputs.infant_lap.value : ""
+      )
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => parseCount(value, passengerCategoryMeta.infant_lap.defaultAge));
+      passengerState.infant_seat_ages = String(
+        passengerAgeInputs.infant_seat ? passengerAgeInputs.infant_seat.value : ""
+      )
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => parseCount(value, passengerCategoryMeta.infant_seat.defaultAge));
+
+      passengerTrigger.addEventListener("click", () => {
+        togglePassengerPanel();
+      });
+
+      passengerStepButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const category = button.getAttribute("data-passenger-step") || "";
+          const delta = Number.parseInt(button.getAttribute("data-step") || "0", 10);
+          const meta = passengerCategoryMeta[category];
+
+          if (!meta || !delta || button.disabled) {
+            return;
+          }
+
+          passengerState[category] = (passengerState[category] || 0) + delta;
+          syncPassengerState();
+        });
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!passengerPanel.hidden && !form.contains(event.target)) {
+          closePassengerPanel();
+        }
+      });
+
+      form.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !passengerPanel.hidden) {
+          closePassengerPanel();
+          passengerTrigger.focus();
+        }
+      });
+
+      syncPassengerState();
+    }
 
     const renderMessage = (container, message) => {
       if (!container) {
@@ -206,69 +1051,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       closeSuggestions(container);
-    };
-
-    const autoSelectExactMatch = (query, labelInput, codeInput, container, suggestions) => {
-      const normalizedQuery = normalizePlaceText(query);
-
-      if (!normalizedQuery || !Array.isArray(suggestions) || suggestions.length === 0) {
-        return false;
-      }
-
-      const exactMatches = suggestions.filter((suggestion) => {
-        const candidates = [
-          suggestion.label,
-          suggestion.value,
-          suggestion.place_name,
-          suggestion.city_name,
-        ]
-          .map(normalizePlaceText)
-          .filter(Boolean);
-
-        return candidates.includes(normalizedQuery);
-      });
-
-      if (exactMatches.length === 0) {
-        return false;
-      }
-
-      const preferredMatch =
-        exactMatches.find((suggestion) => suggestion.type === "city") || exactMatches[0];
-
-      applySelection(labelInput, codeInput, container, preferredMatch);
-      return true;
-    };
-
-    const autoSelectCityPrefixMatch = (query, labelInput, codeInput, container, suggestions) => {
-      const normalizedQuery = normalizePlaceText(query);
-
-      if (!normalizedQuery || !Array.isArray(suggestions) || suggestions.length === 0) {
-        return false;
-      }
-
-      const cityMatches = suggestions.filter((suggestion) => {
-        if (suggestion.type !== "city") {
-          return false;
-        }
-
-        const candidates = [suggestion.place_name, suggestion.city_name, suggestion.label]
-          .map(normalizePlaceText)
-          .filter(Boolean);
-
-        return candidates.some((candidate) => candidate.startsWith(normalizedQuery));
-      });
-
-      if (cityMatches.length === 0) {
-        return false;
-      }
-
-      const exactCityMatch =
-        cityMatches.find((suggestion) => normalizePlaceText(suggestion.city_name) === normalizedQuery) ||
-        cityMatches.find((suggestion) => normalizePlaceText(suggestion.place_name) === normalizedQuery) ||
-        cityMatches.find((suggestion) => normalizePlaceText(suggestion.label) === normalizedQuery);
-
-      applySelection(labelInput, codeInput, container, exactCityMatch || cityMatches[0]);
-      return true;
     };
 
     const getSuggestionButtons = (container) =>
@@ -365,12 +1147,17 @@ document.addEventListener("DOMContentLoaded", () => {
               role="option"
               aria-selected="false"
             >
-              <span class="booking-field__suggestion-primary">${escapeHtml(suggestion.label || "")}</span>
-              ${
-                suggestion.secondary
-                  ? `<span class="booking-field__suggestion-secondary">${escapeHtml(suggestion.secondary)}</span>`
-                  : ""
-              }
+              <span class="booking-field__suggestion-code">${escapeHtml(suggestion.value || "")}</span>
+              <span class="booking-field__suggestion-body">
+                <span class="booking-field__suggestion-primary">${escapeHtml(
+                  suggestion.place_name || suggestion.label || ""
+                )}</span>
+                ${
+                  suggestion.secondary
+                    ? `<span class="booking-field__suggestion-secondary">${escapeHtml(suggestion.secondary)}</span>`
+                    : ""
+                }
+              </span>
             </button>
           `
         )
@@ -378,14 +1165,33 @@ document.addEventListener("DOMContentLoaded", () => {
       container.hidden = false;
 
       container.querySelectorAll("[data-suggestion-index]").forEach((button) => {
-        button.addEventListener("click", () => {
+        let selectionCommitted = false;
+
+        const commitSuggestion = (event) => {
+          if (selectionCommitted) {
+            return;
+          }
+
+          selectionCommitted = true;
+
+          if (event) {
+            event.preventDefault();
+          }
+
           const index = Number(button.getAttribute("data-suggestion-index"));
           const suggestion = suggestions[index];
 
           if (suggestion) {
             applySelection(labelInput, codeInput, container, suggestion);
           }
-        });
+
+          window.setTimeout(() => {
+            selectionCommitted = false;
+          }, 0);
+        };
+
+        button.addEventListener("pointerdown", commitSuggestion);
+        button.addEventListener("click", commitSuggestion);
       });
 
       autocompleteState.set(container, {
@@ -454,14 +1260,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const suggestions = payload.data && Array.isArray(payload.data.suggestions)
           ? payload.data.suggestions
           : [];
-
-        if (autoSelectCityPrefixMatch(trimmedQuery, labelInput, codeInput, container, suggestions)) {
-          return;
-        }
-
-        if (autoSelectExactMatch(trimmedQuery, labelInput, codeInput, container, suggestions)) {
-          return;
-        }
 
         renderSuggestions(
           container,
@@ -586,6 +1384,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       };
 
+      const clearButton =
+        container === originSuggestions ? originClearButton : destinationClearButton;
+
+      const syncClearButton = () => {
+        if (!clearButton) {
+          return;
+        }
+
+        clearButton.hidden = labelInput.value.trim().length === 0;
+      };
+
       const selectExistingValue = () => {
         if (codeInput.value.trim().length === 3 && labelInput.value.trim().length > 0) {
           window.requestAnimationFrame(() => {
@@ -605,6 +1414,7 @@ document.addEventListener("DOMContentLoaded", () => {
           clearSelectedPlace();
         }
 
+        syncClearButton();
         closeSuggestions(container);
         fetchSuggestions(labelInput.value, labelInput, codeInput, container);
       });
@@ -622,6 +1432,17 @@ document.addEventListener("DOMContentLoaded", () => {
           closeSuggestions(container);
         }, 140);
       });
+
+      if (clearButton) {
+        syncClearButton();
+        clearButton.addEventListener("click", () => {
+          labelInput.value = "";
+          clearSelectedPlace();
+          syncClearButton();
+          closeSuggestions(container);
+          labelInput.focus();
+        });
+      }
 
       labelInput.addEventListener("keydown", (event) => {
         const isOpen = !container.hidden;
@@ -678,6 +1499,12 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedPlaceState.destination = originPlace;
         syncNearbyButton(originNearbyButton, selectedPlaceState.origin);
         syncNearbyButton(destinationNearbyButton, selectedPlaceState.destination);
+        if (originClearButton) {
+          originClearButton.hidden = originLabelInput.value.trim().length === 0;
+        }
+        if (destinationClearButton) {
+          destinationClearButton.hidden = destinationLabelInput.value.trim().length === 0;
+        }
 
         closeSuggestions(originSuggestions);
         closeSuggestions(destinationSuggestions);
@@ -717,13 +1544,41 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    if (serviceTypeInput && serviceButtons.length > 0) {
+      serviceButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const serviceUrl = button.getAttribute("data-service-url");
+
+          if (serviceUrl) {
+            window.location.assign(serviceUrl);
+            return;
+          }
+
+          serviceTypeInput.value = button.getAttribute("data-service-type") || "flight";
+          syncServiceButtons();
+        });
+      });
+    }
+
+    if (serviceTypeInput && bundleHotelToggle) {
+      bundleHotelToggle.addEventListener("change", () => {
+        serviceTypeInput.value = bundleHotelToggle.checked ? "flight_hotel" : "flight";
+        syncServiceButtons();
+      });
+    }
+
     if (departureDateInput && returnDateInput) {
       departureDateInput.addEventListener("change", syncReturnDateState);
     }
 
     syncTripButtons();
+    syncServiceButtons();
 
     form.addEventListener("submit", (event) => {
+      if (passengerTrigger && passengerPanel) {
+        syncPassengerState();
+      }
+
       const originReady = originCodeInput && originCodeInput.value.trim().length === 3;
       const destinationReady = destinationCodeInput && destinationCodeInput.value.trim().length === 3;
       const tripType = tripTypeInput ? tripTypeInput.value : "one_way";
@@ -733,8 +1588,11 @@ document.addEventListener("DOMContentLoaded", () => {
         (returnDateInput &&
           returnDateInput.value.trim().length > 0 &&
           (!departureDateInput || returnDateInput.value >= departureDateInput.value));
+      const passengersReady =
+        !passengerTrigger ||
+        (getPassengerTotal() > 0 && getPassengerTotal() <= 9 && passengerState.infant_lap <= passengerState.adult);
 
-      if (!originReady || !destinationReady || !returnReady) {
+      if (!originReady || !destinationReady || !returnReady || !passengersReady) {
         event.preventDefault();
 
         if (!originReady && originLabelInput) {
@@ -743,6 +1601,9 @@ document.addEventListener("DOMContentLoaded", () => {
           destinationLabelInput.focus();
         } else if (!returnReady && returnDateInput) {
           returnDateInput.focus();
+        } else if (!passengersReady && passengerTrigger) {
+          openPassengerPanel();
+          passengerTrigger.focus();
         }
       }
     });
@@ -759,6 +1620,39 @@ document.addEventListener("DOMContentLoaded", () => {
         form.submit();
       });
     });
+  });
+
+  document.querySelectorAll("[data-expiry-at]").forEach((timer) => {
+    const expiryAt = timer.getAttribute("data-expiry-at");
+
+    if (!expiryAt) {
+      return;
+    }
+
+    const renderCountdown = () => {
+      const diff = new Date(expiryAt).getTime() - Date.now();
+
+      if (!Number.isFinite(diff) || diff <= 0) {
+        timer.textContent = "00:00";
+        return false;
+      }
+
+      const totalSeconds = Math.floor(diff / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      timer.textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      return true;
+    };
+
+    if (!renderCountdown()) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (!renderCountdown()) {
+        window.clearInterval(intervalId);
+      }
+    }, 1000);
   });
 
   document.addEventListener("click", (event) => {
@@ -783,20 +1677,4 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.assign(selectUrl);
   });
 
-  document.addEventListener("click", (event) => {
-    const loadMoreButton = event.target.closest("[data-load-more]");
-
-    if (!loadMoreButton) {
-      return;
-    }
-
-    const hiddenCards = document.querySelectorAll(".booking-result-card.is-hidden-by-default");
-
-    hiddenCards.forEach((card) => {
-      card.hidden = false;
-      card.classList.remove("is-hidden-by-default");
-    });
-
-    loadMoreButton.remove();
-  });
 });

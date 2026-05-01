@@ -386,6 +386,64 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  const shouldForcePageReload = (link) => {
+    const href = (link.getAttribute('href') || '').trim();
+
+    if (!href || href.startsWith('#') || link.hasAttribute('download')) {
+      return false;
+    }
+
+    if (link.target && link.target.toLowerCase() !== '_self') {
+      return false;
+    }
+
+    if (/^(mailto:|tel:|sms:|javascript:)/i.test(href)) {
+      return false;
+    }
+
+    const destination = new URL(link.href, window.location.href);
+    const current = new URL(window.location.href);
+
+    if (!['http:', 'https:'].includes(destination.protocol) || destination.origin !== current.origin) {
+      return false;
+    }
+
+    if (
+      destination.pathname === current.pathname
+      && destination.search === current.search
+      && destination.hash
+    ) {
+      return false;
+    }
+
+    return true;
+  };
+
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+
+    const target = event.target;
+    const link = target instanceof Element ? target.closest('a[href]') : null;
+
+    if (!link || !shouldForcePageReload(link)) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const destination = new URL(link.href, window.location.href);
+    const current = new URL(window.location.href);
+
+    if (destination.href === current.href) {
+      window.location.reload();
+      return;
+    }
+
+    window.location.assign(destination.toString());
+  });
+
   document.querySelectorAll('[data-trip-tab]').forEach((button) => {
     button.addEventListener('click', () => {
       const tabName = button.getAttribute('data-trip-tab');
